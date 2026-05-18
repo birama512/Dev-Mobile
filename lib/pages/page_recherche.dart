@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import '../models/morceau.dart';
 import '../widgets/carte_morceau.dart';
+import '../widgets/barre_recherche.dart';
 import 'page_lecteur.dart';
 
-class PageFavoris extends StatelessWidget {
-  PageFavoris({super.key});
+class PageRecherche extends StatelessWidget {
+  PageRecherche({super.key});
 
-  final List<Morceau> favoris = [
+  final List<Morceau> resultats = [
     Morceau(titre: "Neon Dreams", artiste: "Synthwave Collective", chemin: "", duree: const Duration(minutes: 3, seconds: 45)),
-    Morceau(titre: "Ocean Echoes", artiste: "Deep Blue", chemin: "", duree: const Duration(minutes: 2, seconds: 50)),
     Morceau(titre: "Cyberpunk City", artiste: "Nexus 9", chemin: "", duree: const Duration(minutes: 4, seconds: 30)),
   ];
 
@@ -52,32 +52,46 @@ class PageFavoris extends StatelessWidget {
                       ),
                       const SizedBox(width: 16),
                       const Text(
-                        "Favoris",
+                        "Recherche",
                         style: TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
                       ),
-                      const Spacer(),
-                      const Icon(Icons.favorite, color: Color(0xFF6C63FF), size: 28),
                     ],
                   ),
                 ),
+                // Barre de recherche
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                  child: BarreRecherche(),
+                ),
                 const SizedBox(height: 16),
-                // Liste des musiques favorites
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24.0),
+                  child: Text(
+                    "Résultats récents",
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Liste des résultats
                 Expanded(
                   child: ListView.builder(
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.only(bottom: 24),
-                    itemCount: favoris.length,
+                    itemCount: resultats.length,
                     itemBuilder: (context, index) {
-                      final morceau = favoris[index];
+                      final morceau = resultats[index];
                       return CarteMorceau(
                         titre: morceau.titre,
                         artiste: morceau.artiste,
                         onTap: () {
-                          // Animation de transition fluide vers le lecteur
                           Navigator.push(
                             context,
                             PageRouteBuilder(
