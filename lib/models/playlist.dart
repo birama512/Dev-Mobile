@@ -1,7 +1,7 @@
 import 'morceau.dart';
 
 class Playlist {
-  String nom;
+  final String nom;
   final List<Morceau> morceaux;
 
   Playlist({
