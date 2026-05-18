@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../models/morceau.dart';
 import '../widgets/carte_morceau.dart';
 import 'page_lecteur.dart';
+import 'page_favoris.dart';
+import 'page_playlists.dart';
+import 'page_recherche.dart';
+import 'page_profil.dart';
 
 class PageAccueil extends StatelessWidget {
   PageAccueil({super.key});
@@ -17,6 +22,28 @@ class PageAccueil extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: () async {
+          try {
+            FilePickerResult? result = await FilePicker.pickFiles(
+              type: FileType.audio,
+              allowMultiple: true,
+            );
+            if (result != null) {
+              int count = result.files.length;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('$count fichier(s) audio importé(s) avec succès !')),
+              );
+            }
+          } catch (e) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Erreur lors de l\'importation : $e')),
+            );
+          }
+        },
+        backgroundColor: Theme.of(context).primaryColor,
+        child: const Icon(Icons.upload_file, color: Colors.white),
+      ),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -51,15 +78,44 @@ class PageAccueil extends StatelessWidget {
                           color: Colors.white,
                         ),
                       ),
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(0.05),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.search, color: Colors.white),
-                          onPressed: () {},
-                        ),
+                      Row(
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.white.withOpacity(0.05),
+                            ),
+                            child: IconButton(
+                              icon: const Icon(Icons.search, color: Colors.white),
+                              onPressed: () {
+                                Navigator.push(context, MaterialPageRoute(builder: (context) => PageRecherche()));
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(context, MaterialPageRoute(builder: (context) => const PageProfil()));
+                            },
+                            child: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF6C63FF), Color(0xFF00E5FF)],
+                                ),
+                                border: Border.all(color: Colors.white, width: 2),
+                              ),
+                              child: const Center(
+                                child: Text(
+                                  "JD",
+                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -71,9 +127,13 @@ class PageAccueil extends StatelessWidget {
                     children: [
                       _buildChip(context, "Tous", isActive: true),
                       const SizedBox(width: 12),
-                      _buildChip(context, "Favoris"),
+                      _buildChip(context, "Favoris", onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => PageFavoris()));
+                      }),
                       const SizedBox(width: 12),
-                      _buildChip(context, "Playlists"),
+                      _buildChip(context, "Playlists", onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => PagePlaylists()));
+                      }),
                     ],
                   ),
                 ),
@@ -120,21 +180,24 @@ class PageAccueil extends StatelessWidget {
     );
   }
 
-  Widget _buildChip(BuildContext context, String text, {bool isActive = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: isActive ? Theme.of(context).primaryColor : Colors.white.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isActive ? Theme.of(context).primaryColor : Colors.white.withOpacity(0.1),
+  Widget _buildChip(BuildContext context, String text, {bool isActive = false, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? Theme.of(context).primaryColor : Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? Theme.of(context).primaryColor : Colors.white.withOpacity(0.1),
+          ),
         ),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isActive ? Colors.white : Colors.white70,
-          fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+        child: Text(
+          text,
+          style: TextStyle(
+            color: isActive ? Colors.white : Colors.white70,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+          ),
         ),
       ),
     );

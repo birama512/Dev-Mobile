@@ -13,16 +13,13 @@ class CarteMorceau extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) { 
+  Widget build(BuildContext context) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface.withOpacity(0.5),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.05),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.white.withOpacity(0.05), width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.2),
@@ -47,13 +44,10 @@ class CarteMorceau extends StatelessWidget {
               end: Alignment.bottomRight,
             ),
           ),
-          child: const Icon(
-            Icons.music_note_rounded,
-            color: Colors.white,
-          ),
+          child: const Icon(Icons.music_note_rounded, color: Colors.white),
         ),
         title: Text(
-          titre, 
+          titre,
           style: const TextStyle(
             fontWeight: FontWeight.bold,
             color: Colors.white,
@@ -62,10 +56,7 @@ class CarteMorceau extends StatelessWidget {
         ),
         subtitle: Text(
           artiste,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.6),
-            fontSize: 14,
-          ),
+          style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14),
         ),
         trailing: Container(
           decoration: BoxDecoration(
@@ -79,9 +70,7 @@ class CarteMorceau extends StatelessWidget {
           ),
         ),
         onTap: onTap,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }
