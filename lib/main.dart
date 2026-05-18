@@ -1,22 +1,21 @@
 import 'package:flutter/material.dart';
-import 'pages/page_liste_morceaux.dart';
+import 'pages/page_accueil.dart';
 
 void main() {
-  runApp(const MonApplication());
+  runApp(const MyApp());
 }
 
-class MonApplication extends StatelessWidget {
-  const MonApplication({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      debugShowCheckedModeBanner: false,
       title: 'Lecteur Audio',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const PageListeMorceaux(),
+      home: const PageAccueil(),
     );
   }
 }
