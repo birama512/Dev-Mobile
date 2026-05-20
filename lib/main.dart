@@ -1,8 +1,21 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
 import 'pages/page_accueil.dart';
 
-void main() {
-  runApp(const MyApp());
+void main() async {
+  // Obligatoire avant tout appel aux plugins (path_provider, sqflite…)
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialise sqflite_common_ffi sur Windows / Linux / macOS
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+
+  runApp(const MonApp());
 }
 
 class MonApp extends StatelessWidget {
@@ -11,26 +24,17 @@ class MonApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'Musique',
       debugShowCheckedModeBanner: false,
-      title: 'AudioNova',
-      themeMode: ThemeMode.dark,
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: const Color(0xFF0D0D14),
+      theme: ThemeData(
         primaryColor: const Color(0xFF6C63FF),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFF6C63FF),
-          secondary: Color(0xFF00E5FF),
-          surface: Color(0xFF1A1A24),
+        colorScheme: ColorScheme.dark(
+          primary:   const Color(0xFF6C63FF),
+          secondary: const Color(0xFF00E5FF),
         ),
-        fontFamily: 'Inter', // Assuming standard clean font fallback
-        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFF0D0D14),
       ),
-      home: PageAccueil(),
+      home: const PageAccueil(),
     );
   }
-}
-
-class MyApp extends MonApp {
-  const MyApp({super.key});
 }

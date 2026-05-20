@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/morceau.dart';
 import '../services/service_audio.dart';
-import '../services/service_fichier.dart';
+import '../services/database_service.dart';
 import '../widgets/carte_morceau.dart';
 import '../widgets/barre_recherche.dart';
 import 'page_lecteur.dart';
@@ -15,12 +15,12 @@ class PageRecherche extends StatefulWidget {
 
 class _PageRechercheState extends State<PageRecherche> {
   // ── Services ────────────────────────────────────────────────
-  final ServiceAudio    _audio    = ServiceAudio.instance;
-  final ServiceFichiers _fichiers = ServiceFichiers();
+  final ServiceAudio    _audio = ServiceAudio.instance;
+  final DatabaseService _db    = DatabaseService.instance;
 
   // ── État ────────────────────────────────────────────────────
-  List<Morceau> _tousMorceaux = []; // bibliothèque complète
-  List<Morceau> _resultats    = []; // résultats filtrés
+  List<Morceau> _tousMorceaux = [];
+  List<Morceau> _resultats    = [];
   String        _requete      = '';
   bool          _chargement   = true;
 
@@ -31,8 +31,10 @@ class _PageRechercheState extends State<PageRecherche> {
     _chargerBibliotheque();
   }
 
+  /// Charge tous les morceaux depuis la base de données.
   Future<void> _chargerBibliotheque() async {
-    final morceaux = await _fichiers.scannerBibliotheque();
+    final morceaux = await _db.lireMorceaux();
+    if (!mounted) return;
     setState(() {
       _tousMorceaux = morceaux;
       _resultats    = morceaux; // au départ : tout est affiché
@@ -40,22 +42,23 @@ class _PageRechercheState extends State<PageRecherche> {
     });
   }
 
-  // Filtre les morceaux selon la requête (titre ou artiste)
-  void _rechercher(String requete) {
-    setState(() {
-      _requete = requete.trim().toLowerCase();
-      if (_requete.isEmpty) {
-        _resultats = _tousMorceaux;
-      } else {
-        _resultats = _tousMorceaux.where((m) {
-          return m.titre.toLowerCase().contains(_requete) ||
-                 m.artiste.toLowerCase().contains(_requete);
-        }).toList();
-      }
-    });
+  /// Filtre en temps réel via la DB (recherche côté SQL).
+  Future<void> _rechercher(String requete) async {
+    final q = requete.trim();
+    setState(() => _requete = q.toLowerCase());
+
+    if (q.isEmpty) {
+      setState(() => _resultats = _tousMorceaux);
+      return;
+    }
+
+    // Délègue la recherche à la DB pour filtrer sur titre ET artiste
+    final resultats = await _db.rechercherMorceaux(q);
+    if (!mounted) return;
+    setState(() => _resultats = resultats);
   }
 
-  // Lance la lecture d'un morceau dans le contexte des résultats
+  /// Lance la lecture d'un morceau dans le contexte des résultats.
   Future<void> _jouerMorceau(Morceau morceau, int index) async {
     final charge = await _audio.chargerPlaylist(_resultats, index: index);
     if (!charge) await _audio.chargerEtLire(morceau);
@@ -85,7 +88,9 @@ class _PageRechercheState extends State<PageRecherche> {
               children: [
                 // Header
                 Padding(
-                  padding: const EdgeInsets.only(left: 16, right: 24, top: 24, bottom: 16),
+                  padding: const EdgeInsets.only(
+                    left: 16, right: 24, top: 24, bottom: 16,
+                  ),
                   child: Row(
                     children: [
                       Container(
@@ -100,7 +105,7 @@ class _PageRechercheState extends State<PageRecherche> {
                       ),
                       const SizedBox(width: 16),
                       const Text(
-                        "Recherche",
+                        'Recherche',
                         style: TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -111,12 +116,12 @@ class _PageRechercheState extends State<PageRecherche> {
                   ),
                 ),
 
-                // Barre de recherche — branchée sur _rechercher()
+                // Barre de recherche
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
-                  child: BarreRecherche(
-                    onChanged: _rechercher,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24.0, vertical: 8.0,
                   ),
+                  child: BarreRecherche(onChanged: _rechercher),
                 ),
                 const SizedBox(height: 16),
 
@@ -124,9 +129,11 @@ class _PageRechercheState extends State<PageRecherche> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24.0),
                   child: Text(
-                    _requete.isEmpty
-                        ? "Toute la bibliothèque"
-                        : "${_resultats.length} résultat${_resultats.length > 1 ? 's' : ''} pour \"$_requete\"",
+                    _chargement
+                        ? 'Chargement...'
+                        : _requete.isEmpty
+                            ? '${_tousMorceaux.length} morceau(x) en bibliothèque'
+                            : '${_resultats.length} résultat${_resultats.length > 1 ? 's' : ''} pour "$_requete"',
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -140,18 +147,30 @@ class _PageRechercheState extends State<PageRecherche> {
                 Expanded(
                   child: _chargement
                       ? const Center(
-                          child: CircularProgressIndicator(color: Color(0xFF6C63FF)),
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF6C63FF),
+                          ),
                         )
                       : _resultats.isEmpty
                           ? Center(
                               child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.search_off, color: Colors.white24, size: 64),
+                                  const Icon(
+                                    Icons.search_off,
+                                    color: Colors.white24,
+                                    size: 64,
+                                  ),
                                   const SizedBox(height: 16),
                                   Text(
-                                    "Aucun résultat pour \"$_requete\"",
-                                    style: const TextStyle(color: Colors.white54, fontSize: 16),
+                                    _tousMorceaux.isEmpty
+                                        ? 'La bibliothèque est vide.\nImporte des morceaux depuis l\'accueil.'
+                                        : 'Aucun résultat pour "$_requete"',
+                                    style: const TextStyle(
+                                      color: Colors.white54,
+                                      fontSize: 16,
+                                    ),
+                                    textAlign: TextAlign.center,
                                   ),
                                 ],
                               ),

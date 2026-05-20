@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../models/playlist.dart';
 import '../services/service_audio.dart';
+import '../services/service_fichier.dart';
+import '../services/database_service.dart';
 import '../widgets/carte_morceau.dart';
 import 'page_lecteur.dart';
 
@@ -14,28 +16,44 @@ class PageDetailsPlaylist extends StatefulWidget {
 }
 
 class _PageDetailsPlaylistState extends State<PageDetailsPlaylist> {
-  // ── Service ─────────────────────────────────────────────────
-  final ServiceAudio _audio = ServiceAudio.instance;
+  // ── Services ─────────────────────────────────────────────────
+  final ServiceAudio    _audio    = ServiceAudio.instance;
+  final ServiceFichiers _fichiers = ServiceFichiers();
+  final DatabaseService _db       = DatabaseService.instance;
 
-  // Indique si un chargement est en cours (ex: bouton "Tout lire")
+  // ── État ─────────────────────────────────────────────────────
+  late Playlist _playlist;
   bool _enChargement = false;
 
-  // Lance toute la playlist depuis l'index donné
+  @override
+  void initState() {
+    super.initState();
+    _playlist = widget.playlist;
+  }
+
+  /// Recharge la playlist depuis la DB pour avoir la liste à jour.
+  Future<void> _rechargerPlaylist() async {
+    final playlists = await _db.lirePlaylists();
+    final maj = playlists.firstWhere(
+      (p) => p.nom == _playlist.nom,
+      orElse: () => _playlist,
+    );
+    if (mounted) setState(() => _playlist = maj);
+  }
+
+  /// Lance la playlist depuis l'index donné.
   Future<void> _jouerDepuis(int index) async {
-    if (widget.playlist.morceaux.isEmpty) return;
+    if (_playlist.morceaux.isEmpty) return;
 
     setState(() => _enChargement = true);
 
-    final charge = await _audio.chargerPlaylist(
-      widget.playlist.morceaux,
-      index: index,
-    );
+    final charge = await _audio.chargerPlaylist(_playlist.morceaux, index: index);
 
     if (!charge) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Aucun fichier audio valide dans cette playlist."),
+            content: Text('Aucun fichier audio valide dans cette playlist.'),
             backgroundColor: Colors.redAccent,
           ),
         );
@@ -51,9 +69,34 @@ class _PageDetailsPlaylistState extends State<PageDetailsPlaylist> {
       Navigator.push(
         context,
         PageLecteur.route(
-          morceau:      widget.playlist.morceaux[index],
-          playlist:     widget.playlist.morceaux,
+          morceau:      _playlist.morceaux[index],
+          playlist:     _playlist.morceaux,
           initialIndex: index,
+        ),
+      );
+    }
+  }
+
+  /// Importe des fichiers audio et les ajoute à la playlist courante en DB.
+  Future<void> _ajouterMorceaux() async {
+    final morceaux = await _fichiers.choisirFichiers();
+    if (morceaux.isEmpty) return;
+
+    // Sauvegarde d'abord les morceaux dans la bibliothèque
+    await _db.sauvegarderMorceaux(morceaux);
+
+    // Puis les associe à la playlist
+    for (final m in morceaux) {
+      await _db.ajouterMorceauAPlaylist(_playlist.nom, m);
+    }
+
+    // Recharge depuis la DB
+    await _rechargerPlaylist();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${morceaux.length} morceau(x) ajouté(s) à "${_playlist.nom}".'),
         ),
       );
     }
@@ -61,8 +104,6 @@ class _PageDetailsPlaylistState extends State<PageDetailsPlaylist> {
 
   @override
   Widget build(BuildContext context) {
-    final playlist = widget.playlist;
-
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -99,7 +140,7 @@ class _PageDetailsPlaylistState extends State<PageDetailsPlaylist> {
                       const SizedBox(width: 16),
                       Expanded(
                         child: Text(
-                          playlist.nom,
+                          _playlist.nom,
                           style: const TextStyle(
                             fontSize: 28,
                             fontWeight: FontWeight.bold,
@@ -108,6 +149,12 @@ class _PageDetailsPlaylistState extends State<PageDetailsPlaylist> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
+                      ),
+                      // Bouton ajouter des morceaux
+                      IconButton(
+                        icon: const Icon(Icons.add, color: Color(0xFF6C63FF), size: 28),
+                        tooltip: 'Ajouter des morceaux',
+                        onPressed: _ajouterMorceaux,
                       ),
                     ],
                   ),
@@ -127,9 +174,9 @@ class _PageDetailsPlaylistState extends State<PageDetailsPlaylist> {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF6C63FF).withOpacity(0.3),
+                          color:      const Color(0xFF6C63FF).withOpacity(0.3),
                           blurRadius: 20,
-                          offset: const Offset(0, 10),
+                          offset:     const Offset(0, 10),
                         ),
                       ],
                     ),
@@ -141,26 +188,32 @@ class _PageDetailsPlaylistState extends State<PageDetailsPlaylist> {
                 // Nombre de morceaux
                 Center(
                   child: Text(
-                    "${playlist.morceaux.length} morceau${playlist.morceaux.length > 1 ? 'x' : ''}",
-                    style: TextStyle(fontSize: 16, color: Colors.white.withOpacity(0.7)),
+                    '${_playlist.morceaux.length} morceau${_playlist.morceaux.length > 1 ? 'x' : ''}',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.white.withOpacity(0.7),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 24),
 
-                // Bouton "Tout lire" — branché sur ServiceAudio
+                // Bouton "Tout lire"
                 Center(
                   child: _enChargement
                       ? const CircularProgressIndicator(color: Color(0xFF6C63FF))
                       : ElevatedButton.icon(
-                          onPressed: playlist.morceaux.isNotEmpty
+                          onPressed: _playlist.morceaux.isNotEmpty
                               ? () => _jouerDepuis(0)
                               : null,
-                          icon: const Icon(Icons.play_arrow),
-                          label: const Text("Tout lire"),
+                          icon:  const Icon(Icons.play_arrow),
+                          label: const Text('Tout lire'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF6C63FF),
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 32,
+                              vertical: 12,
+                            ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(30),
                             ),
@@ -171,24 +224,37 @@ class _PageDetailsPlaylistState extends State<PageDetailsPlaylist> {
 
                 // Liste des morceaux
                 Expanded(
-                  child: playlist.morceaux.isEmpty
+                  child: _playlist.morceaux.isEmpty
                       ? Center(
-                          child: Text(
-                            "Cette playlist est vide",
-                            style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Cette playlist est vide',
+                                style: TextStyle(color: Colors.white.withOpacity(0.5)),
+                              ),
+                              const SizedBox(height: 12),
+                              TextButton.icon(
+                                onPressed: _ajouterMorceaux,
+                                icon: const Icon(Icons.add, color: Color(0xFF6C63FF)),
+                                label: const Text(
+                                  'Ajouter des morceaux',
+                                  style: TextStyle(color: Color(0xFF6C63FF)),
+                                ),
+                              ),
+                            ],
                           ),
                         )
                       : ListView.builder(
                           physics: const BouncingScrollPhysics(),
                           padding: const EdgeInsets.only(bottom: 24),
-                          itemCount: playlist.morceaux.length,
+                          itemCount: _playlist.morceaux.length,
                           itemBuilder: (context, index) {
-                            final morceau = playlist.morceaux[index];
+                            final morceau = _playlist.morceaux[index];
                             return CarteMorceau(
                               titre:   morceau.titre,
                               artiste: morceau.artiste,
-                              // Chaque morceau lance la playlist à partir de sa position
-                              onTap: () => _jouerDepuis(index),
+                              onTap:   () => _jouerDepuis(index),
                             );
                           },
                         ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/morceau.dart';
 import '../services/service_fichier.dart';
+import '../services/database_service.dart';
 import '../widgets/carte_morceau.dart';
 import 'page_favoris.dart';
 import 'page_lecteur.dart';
@@ -18,9 +19,10 @@ class PageAccueil extends StatefulWidget {
 
 class _PageAccueilState extends State<PageAccueil> {
   final ServiceFichiers _serviceFichiers = ServiceFichiers();
-  final List<Morceau> _bibliotheque = [];
+  final DatabaseService _db             = DatabaseService.instance;
 
-  bool _isLoading = true;
+  List<Morceau> _bibliotheque = [];
+  bool          _isLoading    = true;
 
   @override
   void initState() {
@@ -28,53 +30,62 @@ class _PageAccueilState extends State<PageAccueil> {
     _chargerBibliotheque();
   }
 
+  /// Charge depuis la DB, puis complète avec le scan système.
   Future<void> _chargerBibliotheque() async {
     try {
-      final morceaux = await _serviceFichiers.scannerBibliotheque();
-      if (!mounted) {
-        return;
+      // 1. Charge d'abord ce qui est déjà en base (rapide)
+      final enBase = await _db.lireMorceaux();
+      if (mounted) {
+        setState(() {
+          _bibliotheque = enBase;
+          _isLoading    = enBase.isEmpty; // garde le spinner si vide
+        });
       }
 
-      setState(() {
-        _bibliotheque
-          ..clear()
-          ..addAll(morceaux);
-        _isLoading = false;
-      });
+      // 2. Scan système → persiste les nouveaux morceaux
+      final morceauxScan = await _serviceFichiers.scannerBibliotheque();
+      if (morceauxScan.isNotEmpty) {
+        await _db.sauvegarderMorceaux(morceauxScan);
+        final complet = await _db.lireMorceaux();
+        if (mounted) setState(() => _bibliotheque = complet);
+      }
     } catch (_) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _isLoading = false;
-      });
+      // En cas d'erreur DB (ex: 1re ouverture lente), on ignore
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
+  /// Import manuel : sauvegarde en DB puis ouvre directement le lecteur
+  /// avec les morceaux importés (chemin valide garanti).
   Future<void> _importerAudio() async {
     final morceaux = await _serviceFichiers.choisirFichiers();
-    if (!mounted || morceaux.isEmpty) {
-      return;
-    }
+    if (!mounted || morceaux.isEmpty) return;
 
+    // Ajoute en tête de liste pour affichage immédiat
     setState(() {
-      _bibliotheque.insertAll(0, morceaux);
+      // Évite les doublons dans l'affichage
+      final chemins = _bibliotheque.map((m) => m.chemin).toSet();
+      final nouveaux = morceaux.where((m) => !chemins.contains(m.chemin)).toList();
+      _bibliotheque.insertAll(0, nouveaux);
     });
 
-    if (!mounted) {
-      return;
-    }
+    // Persiste en base (les morceaux avec chemin valide)
+    await _db.sauvegarderMorceaux(morceaux);
+
+    if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${morceaux.length} fichier(s) audio ajouté(s).')),
     );
 
+    // Ouvre le lecteur directement avec les morceaux importés
+    // (on n'attend PAS un rechargement DB pour garder les bytes/chemin frais)
     await Navigator.push(
       context,
       PageLecteur.route(
-        morceau: morceaux.first,
-        playlist: _bibliotheque,
+        morceau:      morceaux.first,
+        playlist:     morceaux,
         initialIndex: 0,
       ),
     );
@@ -84,8 +95,8 @@ class _PageAccueilState extends State<PageAccueil> {
     Navigator.push(
       context,
       PageLecteur.route(
-        morceau: morceau,
-        playlist: _bibliotheque,
+        morceau:      morceau,
+        playlist:     _bibliotheque,
         initialIndex: index,
       ),
     );
@@ -100,7 +111,7 @@ class _PageAccueilState extends State<PageAccueil> {
         onPressed: _importerAudio,
         backgroundColor: Theme.of(context).primaryColor,
         foregroundColor: Colors.white,
-        icon: const Icon(Icons.upload_file),
+        icon:  const Icon(Icons.upload_file),
         label: const Text('Importer'),
       ),
       body: Stack(
@@ -111,10 +122,7 @@ class _PageAccueilState extends State<PageAccueil> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF1E1E2C),
-                  Color(0xFF0D0D14),
-                ],
+                colors: [Color(0xFF1E1E2C), Color(0xFF0D0D14)],
               ),
             ),
           ),
@@ -122,8 +130,11 @@ class _PageAccueilState extends State<PageAccueil> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Header ───────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.only(left: 24, right: 24, top: 32, bottom: 16),
+                  padding: const EdgeInsets.only(
+                    left: 24, right: 24, top: 32, bottom: 16,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -144,22 +155,22 @@ class _PageAccueilState extends State<PageAccueil> {
                             ),
                             child: IconButton(
                               icon: const Icon(Icons.search, color: Colors.white),
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(builder: (context) => PageRecherche()),
-                                );
-                              },
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const PageRecherche(),
+                                ),
+                              ),
                             ),
                           ),
                           const SizedBox(width: 12),
                           GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => const PageProfil()),
-                              );
-                            },
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const PageProfil(),
+                              ),
+                            ),
                             child: Container(
                               width: 44,
                               height: 44,
@@ -173,7 +184,10 @@ class _PageAccueilState extends State<PageAccueil> {
                               child: const Center(
                                 child: Text(
                                   'JD',
-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                             ),
@@ -183,36 +197,36 @@ class _PageAccueilState extends State<PageAccueil> {
                     ],
                   ),
                 ),
+
+                // ── Chips ────────────────────────────────────
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24.0, vertical: 8.0,
+                  ),
                   child: Row(
                     children: [
                       _buildChip(context, 'Tous', isActive: true),
                       const SizedBox(width: 12),
                       _buildChip(
-                        context,
-                        'Favoris',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => PageFavoris()),
-                          );
-                        },
+                        context, 'Favoris',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const PageFavoris()),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       _buildChip(
-                        context,
-                        'Playlists',
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => PagePlaylists()),
-                          );
-                        },
+                        context, 'Playlists',
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const PagePlaylists()),
+                        ),
                       ),
                     ],
                   ),
                 ),
+
+                // ── Compteur ─────────────────────────────────
                 const SizedBox(height: 12),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -222,24 +236,29 @@ class _PageAccueilState extends State<PageAccueil> {
                         : hasAudio
                             ? '${_bibliotheque.length} morceau(s) prêt(s) à lire'
                             : 'Importe des fichiers audio pour lancer la lecture.',
-                    style: TextStyle(color: Colors.white.withOpacity(0.68), fontSize: 14),
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.68),
+                      fontSize: 14,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // ── Liste ─────────────────────────────────────
                 Expanded(
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())
                       : hasAudio
                           ? ListView.builder(
                               physics: const BouncingScrollPhysics(),
-                              padding: const EdgeInsets.only(bottom: 24),
+                              padding: const EdgeInsets.only(bottom: 100),
                               itemCount: _bibliotheque.length,
                               itemBuilder: (context, index) {
                                 final morceau = _bibliotheque[index];
                                 return CarteMorceau(
-                                  titre: morceau.titre,
+                                  titre:   morceau.titre,
                                   artiste: morceau.artiste,
-                                  onTap: () => _ouvrirLecteur(morceau, index),
+                                  onTap:   () => _ouvrirLecteur(morceau, index),
                                 );
                               },
                             )
@@ -261,11 +280,15 @@ class _PageAccueilState extends State<PageAccueil> {
                                           ],
                                         ),
                                       ),
-                                      child: const Icon(Icons.library_music, color: Colors.white, size: 66),
+                                      child: const Icon(
+                                        Icons.library_music,
+                                        color: Colors.white,
+                                        size: 66,
+                                      ),
                                     ),
                                     const SizedBox(height: 24),
                                     const Text(
-                                      'Aucun morceau local trouvé',
+                                      'Aucun morceau trouvé',
                                       style: TextStyle(
                                         color: Colors.white,
                                         fontSize: 22,
@@ -275,7 +298,7 @@ class _PageAccueilState extends State<PageAccueil> {
                                     ),
                                     const SizedBox(height: 10),
                                     Text(
-                                      'Ajoute tes fichiers audio avec le bouton Importer pour écouter de vrais morceaux.',
+                                      'Appuie sur Importer pour choisir des fichiers audio.',
                                       style: TextStyle(
                                         color: Colors.white.withOpacity(0.7),
                                         fontSize: 14,
@@ -285,12 +308,14 @@ class _PageAccueilState extends State<PageAccueil> {
                                     const SizedBox(height: 24),
                                     ElevatedButton.icon(
                                       onPressed: _importerAudio,
-                                      icon: const Icon(Icons.upload_file),
+                                      icon:  const Icon(Icons.upload_file),
                                       label: const Text('Importer maintenant'),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Theme.of(context).primaryColor,
                                         foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 24, vertical: 12,
+                                        ),
                                         shape: RoundedRectangleBorder(
                                           borderRadius: BorderRadius.circular(28),
                                         ),
@@ -309,16 +334,25 @@ class _PageAccueilState extends State<PageAccueil> {
     );
   }
 
-  Widget _buildChip(BuildContext context, String text, {bool isActive = false, VoidCallback? onTap}) {
+  Widget _buildChip(
+    BuildContext context,
+    String text, {
+    bool isActive = false,
+    VoidCallback? onTap,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: isActive ? Theme.of(context).primaryColor : Colors.white.withOpacity(0.05),
+          color: isActive
+              ? Theme.of(context).primaryColor
+              : Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isActive ? Theme.of(context).primaryColor : Colors.white.withOpacity(0.1),
+            color: isActive
+                ? Theme.of(context).primaryColor
+                : Colors.white.withOpacity(0.1),
           ),
         ),
         child: Text(
