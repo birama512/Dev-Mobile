@@ -1,53 +1,111 @@
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
+
 import '../models/morceau.dart';
+import '../services/service_fichier.dart';
 import '../widgets/carte_morceau.dart';
-import 'page_lecteur.dart';
 import 'page_favoris.dart';
+import 'page_lecteur.dart';
 import 'page_playlists.dart';
-import 'page_recherche.dart';
 import 'page_profil.dart';
+import 'page_recherche.dart';
 
-class PageAccueil extends StatelessWidget {
-  PageAccueil({super.key});
+class PageAccueil extends StatefulWidget {
+  const PageAccueil({super.key});
 
-  final List<Morceau> playlist = [
-    Morceau(titre: "Interstellar Resonance", artiste: "Cosmic Harmonics", chemin: "", duree: const Duration(minutes: 4, seconds: 5)),
-    Morceau(titre: "Neon Dreams", artiste: "Synthwave Collective", chemin: "", duree: const Duration(minutes: 3, seconds: 45)),
-    Morceau(titre: "Midnight Drive", artiste: "Luna", chemin: "", duree: const Duration(minutes: 5, seconds: 12)),
-    Morceau(titre: "Ocean Echoes", artiste: "Deep Blue", chemin: "", duree: const Duration(minutes: 2, seconds: 50)),
-    Morceau(titre: "Cyberpunk City", artiste: "Nexus 9", chemin: "", duree: const Duration(minutes: 4, seconds: 30)),
-  ];
+  @override
+  State<PageAccueil> createState() => _PageAccueilState();
+}
+
+class _PageAccueilState extends State<PageAccueil> {
+  final ServiceFichiers _serviceFichiers = ServiceFichiers();
+  final List<Morceau> _bibliotheque = [];
+
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _chargerBibliotheque();
+  }
+
+  Future<void> _chargerBibliotheque() async {
+    try {
+      final morceaux = await _serviceFichiers.scannerBibliotheque();
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _bibliotheque
+          ..clear()
+          ..addAll(morceaux);
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _importerAudio() async {
+    final morceaux = await _serviceFichiers.choisirFichiers();
+    if (!mounted || morceaux.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _bibliotheque.insertAll(0, morceaux);
+    });
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${morceaux.length} fichier(s) audio ajouté(s).')),
+    );
+
+    await Navigator.push(
+      context,
+      PageLecteur.route(
+        morceau: morceaux.first,
+        playlist: _bibliotheque,
+        initialIndex: 0,
+      ),
+    );
+  }
+
+  void _ouvrirLecteur(Morceau morceau, int index) {
+    Navigator.push(
+      context,
+      PageLecteur.route(
+        morceau: morceau,
+        playlist: _bibliotheque,
+        initialIndex: index,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final hasAudio = _bibliotheque.isNotEmpty;
+
     return Scaffold(
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          try {
-            FilePickerResult? result = await FilePicker.pickFiles(
-              type: FileType.audio,
-              allowMultiple: true,
-            );
-            if (result != null) {
-              int count = result.files.length;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('$count fichier(s) audio importé(s) avec succès !')),
-              );
-            }
-          } catch (e) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text('Erreur lors de l\'importation : $e')),
-            );
-          }
-        },
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _importerAudio,
         backgroundColor: Theme.of(context).primaryColor,
-        child: const Icon(Icons.upload_file, color: Colors.white),
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.upload_file),
+        label: const Text('Importer'),
       ),
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background Gradient
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -64,14 +122,13 @@ class PageAccueil extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
                 Padding(
                   padding: const EdgeInsets.only(left: 24, right: 24, top: 32, bottom: 16),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text(
-                        "Bibliothèque",
+                        'Bibliothèque',
                         style: TextStyle(
                           fontSize: 32,
                           fontWeight: FontWeight.bold,
@@ -88,14 +145,20 @@ class PageAccueil extends StatelessWidget {
                             child: IconButton(
                               icon: const Icon(Icons.search, color: Colors.white),
                               onPressed: () {
-                                Navigator.push(context, MaterialPageRoute(builder: (context) => PageRecherche()));
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => PageRecherche()),
+                                );
                               },
                             ),
                           ),
                           const SizedBox(width: 12),
                           GestureDetector(
                             onTap: () {
-                              Navigator.push(context, MaterialPageRoute(builder: (context) => const PageProfil()));
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => const PageProfil()),
+                              );
                             },
                             child: Container(
                               width: 44,
@@ -109,7 +172,7 @@ class PageAccueil extends StatelessWidget {
                               ),
                               child: const Center(
                                 child: Text(
-                                  "JD",
+                                  'JD',
                                   style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                                 ),
                               ),
@@ -120,57 +183,123 @@ class PageAccueil extends StatelessWidget {
                     ],
                   ),
                 ),
-                // Filtres / Categories
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8.0),
                   child: Row(
                     children: [
-                      _buildChip(context, "Tous", isActive: true),
+                      _buildChip(context, 'Tous', isActive: true),
                       const SizedBox(width: 12),
-                      _buildChip(context, "Favoris", onTap: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => PageFavoris()));
-                      }),
+                      _buildChip(
+                        context,
+                        'Favoris',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => PageFavoris()),
+                          );
+                        },
+                      ),
                       const SizedBox(width: 12),
-                      _buildChip(context, "Playlists", onTap: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (context) => PagePlaylists()));
-                      }),
+                      _buildChip(
+                        context,
+                        'Playlists',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => PagePlaylists()),
+                          );
+                        },
+                      ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    _isLoading
+                        ? 'Recherche de morceaux sur l\'appareil...'
+                        : hasAudio
+                            ? '${_bibliotheque.length} morceau(s) prêt(s) à lire'
+                            : 'Importe des fichiers audio pour lancer la lecture.',
+                    style: TextStyle(color: Colors.white.withOpacity(0.68), fontSize: 14),
+                  ),
+                ),
                 const SizedBox(height: 16),
-                // Liste des musiques
                 Expanded(
-                  child: ListView.builder(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.only(bottom: 24),
-                    itemCount: playlist.length,
-                    itemBuilder: (context, index) {
-                      final morceau = playlist[index];
-                      return CarteMorceau(
-                        titre: morceau.titre,
-                        artiste: morceau.artiste,
-                        onTap: () {
-                          // Animation de transition fluide vers le lecteur
-                          Navigator.push(
-                            context,
-                            PageRouteBuilder(
-                              pageBuilder: (context, animation, secondaryAnimation) => const PageLecteur(),
-                              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                const begin = Offset(0.0, 1.0);
-                                const end = Offset.zero;
-                                const curve = Curves.easeOutCubic;
-                                var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-                                return SlideTransition(
-                                  position: animation.drive(tween),
-                                  child: child,
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : hasAudio
+                          ? ListView.builder(
+                              physics: const BouncingScrollPhysics(),
+                              padding: const EdgeInsets.only(bottom: 24),
+                              itemCount: _bibliotheque.length,
+                              itemBuilder: (context, index) {
+                                final morceau = _bibliotheque[index];
+                                return CarteMorceau(
+                                  titre: morceau.titre,
+                                  artiste: morceau.artiste,
+                                  onTap: () => _ouvrirLecteur(morceau, index),
                                 );
                               },
+                            )
+                          : Center(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 32),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 150,
+                                      height: 150,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Theme.of(context).primaryColor.withOpacity(0.35),
+                                            Theme.of(context).colorScheme.secondary.withOpacity(0.22),
+                                          ],
+                                        ),
+                                      ),
+                                      child: const Icon(Icons.library_music, color: Colors.white, size: 66),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    const Text(
+                                      'Aucun morceau local trouvé',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      'Ajoute tes fichiers audio avec le bouton Importer pour écouter de vrais morceaux.',
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.7),
+                                        fontSize: 14,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 24),
+                                    ElevatedButton.icon(
+                                      onPressed: _importerAudio,
+                                      icon: const Icon(Icons.upload_file),
+                                      label: const Text('Importer maintenant'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Theme.of(context).primaryColor,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(28),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          );
-                        },
-                      );
-                    },
-                  ),
                 ),
               ],
             ),

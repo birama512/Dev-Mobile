@@ -77,21 +77,12 @@ class PageFavoris extends StatelessWidget {
                         titre: morceau.titre,
                         artiste: morceau.artiste,
                         onTap: () {
-                          // Animation de transition fluide vers le lecteur
                           Navigator.push(
                             context,
-                            PageRouteBuilder(
-                              pageBuilder: (context, animation, secondaryAnimation) => const PageLecteur(),
-                              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                const begin = Offset(0.0, 1.0);
-                                const end = Offset.zero;
-                                const curve = Curves.easeOutCubic;
-                                var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-                                return SlideTransition(
-                                  position: animation.drive(tween),
-                                  child: child,
-                                );
-                              },
+                            PageLecteur.route(
+                              morceau: morceau,
+                              playlist: favoris,
+                              initialIndex: index,
                             ),
                           );
                         },

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'pages/page_accueil.dart';
 
 void main() {
-  runApp(const MonApp());
+  runApp(const MyApp());
 }
 
 class MonApp extends StatelessWidget {
@@ -29,4 +29,8 @@ class MonApp extends StatelessWidget {
       home: PageAccueil(),
     );
   }
+}
+
+class MyApp extends MonApp {
+  const MyApp({super.key});
 }

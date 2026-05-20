@@ -4,12 +4,16 @@ import '../pages/page_lecteur.dart';
 
 class BarreLecteur extends StatelessWidget {
   final Morceau morceau;
+  final List<Morceau> playlist;
+  final int initialIndex;
   final bool isPlaying;
   final VoidCallback onPlayPause;
 
   const BarreLecteur({
     super.key,
     required this.morceau,
+    this.playlist = const [],
+    this.initialIndex = 0,
     this.isPlaying = true,
     required this.onPlayPause,
   });
@@ -20,18 +24,10 @@ class BarreLecteur extends StatelessWidget {
       onTap: () {
         Navigator.push(
           context,
-          PageRouteBuilder(
-            pageBuilder: (context, animation, secondaryAnimation) => const PageLecteur(),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-              const begin = Offset(0.0, 1.0);
-              const end = Offset.zero;
-              const curve = Curves.easeOutCubic;
-              var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-              return SlideTransition(
-                position: animation.drive(tween),
-                child: child,
-              );
-            },
+          PageLecteur.route(
+            morceau: morceau,
+            playlist: playlist.isEmpty ? [morceau] : playlist,
+            initialIndex: initialIndex,
           ),
         );
       },

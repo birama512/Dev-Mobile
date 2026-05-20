@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/playlist.dart';
 import '../models/morceau.dart';
-import 'page_lecteur.dart';
 import '../widgets/carte_morceau.dart';
 import 'page_details_playlist.dart';
 

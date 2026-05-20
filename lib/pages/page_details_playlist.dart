@@ -108,14 +108,10 @@ class PageDetailsPlaylist extends StatelessWidget {
                       if (playlist.morceaux.isNotEmpty) {
                         Navigator.push(
                           context,
-                          PageRouteBuilder(
-                            pageBuilder: (context, animation, secondaryAnimation) => const PageLecteur(),
-                            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                              return SlideTransition(
-                                position: animation.drive(Tween(begin: const Offset(0.0, 1.0), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic))),
-                                child: child,
-                              );
-                            },
+                          PageLecteur.route(
+                            morceau: playlist.morceaux.first,
+                            playlist: playlist.morceaux,
+                            initialIndex: 0,
                           ),
                         );
                       }
@@ -154,14 +150,10 @@ class PageDetailsPlaylist extends StatelessWidget {
                               onTap: () {
                                 Navigator.push(
                                   context,
-                                  PageRouteBuilder(
-                                    pageBuilder: (context, animation, secondaryAnimation) => const PageLecteur(),
-                                    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                                      return SlideTransition(
-                                        position: animation.drive(Tween(begin: const Offset(0.0, 1.0), end: Offset.zero).chain(CurveTween(curve: Curves.easeOutCubic))),
-                                        child: child,
-                                      );
-                                    },
+                                  PageLecteur.route(
+                                    morceau: morceau,
+                                    playlist: playlist.morceaux,
+                                    initialIndex: index,
                                   ),
                                 );
                               },
