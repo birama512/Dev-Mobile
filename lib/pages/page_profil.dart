@@ -1,24 +1,67 @@
 import 'package:flutter/material.dart';
+import 'package:just_audio/just_audio.dart';
+import '../services/service_audio.dart';
 
-class PageProfil extends StatelessWidget {
+class PageProfil extends StatefulWidget {
   const PageProfil({super.key});
 
+  @override
+  State<PageProfil> createState() => _PageProfilState();
+}
+
+class _PageProfilState extends State<PageProfil> {
+  // ── Service ─────────────────────────────────────────────────
+  final ServiceAudio _audio = ServiceAudio.instance;
+
+  // ── Paramètres utilisateur (à persister avec SharedPreferences) ──
+  double _volume      = 1.0;
+  bool   _aleatoire   = false;
+  bool   _repetition  = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Synchronise les toggles avec l'état actuel du player
+    _volume = _audio.volume;
+  }
+
+  // ── Handlers ────────────────────────────────────────────────
+
+  Future<void> _onVolumeChange(double v) async {
+    setState(() => _volume = v);
+    await _audio.setVolume(v);
+  }
+
+  Future<void> _onAleatoireChange(bool v) async {
+    setState(() => _aleatoire = v);
+    await _audio.setShuffle(v);
+  }
+
+  Future<void> _onRepetitionChange(bool v) async {
+    setState(() => _repetition = v);
+    await _audio.setLoopMode(v ? LoopMode.one : LoopMode.off);
+  }
+
+  Future<void> _onDeconnexion() async {
+    // Arrête la lecture proprement avant de déconnecter
+    await _audio.stop();
+    if (mounted) Navigator.pop(context);
+  }
+
+  // ── UI ──────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background Gradient
+          // Background
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF1E1E2C),
-                  Color(0xFF0D0D14),
-                ],
+                colors: [Color(0xFF1E1E2C), Color(0xFF0D0D14)],
               ),
             ),
           ),
@@ -26,7 +69,7 @@ class PageProfil extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Header with back button
+                // Header
                 Padding(
                   padding: const EdgeInsets.only(left: 16, right: 24, top: 24, bottom: 16),
                   child: Row(
@@ -44,16 +87,13 @@ class PageProfil extends StatelessWidget {
                       const SizedBox(width: 16),
                       const Text(
                         "Profil",
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                        style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 32),
+
                 // Avatar
                 Container(
                   width: 120,
@@ -74,22 +114,14 @@ class PageProfil extends StatelessWidget {
                   child: const Center(
                     child: Text(
                       "JD",
-                      style: TextStyle(
-                        fontSize: 48,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
+                      style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                   ),
                 ),
                 const SizedBox(height: 24),
                 const Text(
                   "John Doe",
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -100,22 +132,67 @@ class PageProfil extends StatelessWidget {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const SizedBox(height: 48),
-                // Options de paramètres
+
+                // Statut du player en temps réel
+                const SizedBox(height: 12),
+                StreamBuilder<PlayerState>(
+                  stream: _audio.playerStateStream,
+                  builder: (context, snapshot) {
+                    final playing = snapshot.data?.playing ?? false;
+                    return Text(
+                      playing ? "🎵 En cours de lecture" : "⏸ Lecture en pause",
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white.withOpacity(0.5),
+                      ),
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 32),
+
+                // Options
                 Expanded(
-                  child: Container(
+                  child: ListView(
+                    physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.symmetric(horizontal: 24),
-                    child: ListView(
-                      physics: const BouncingScrollPhysics(),
-                      children: [
-                        _buildSettingItem(Icons.settings, "Paramètres de l'application"),
-                        _buildSettingItem(Icons.notifications_none, "Notifications"),
-                        _buildSettingItem(Icons.history, "Historique d'écoute"),
-                        _buildSettingItem(Icons.help_outline, "Aide & Support"),
-                        const SizedBox(height: 24),
-                        _buildSettingItem(Icons.logout, "Déconnexion", isDestructive: true),
-                      ],
-                    ),
+                    children: [
+
+                      // ── Volume ──────────────────────────────
+                      _buildSectionTitre("Audio"),
+                      _buildVolume(),
+
+                      // ── Lecture aléatoire ───────────────────
+                      _buildToggleItem(
+                        Icons.shuffle,
+                        "Lecture aléatoire",
+                        _aleatoire,
+                        _onAleatoireChange,
+                      ),
+
+                      // ── Répétition ──────────────────────────
+                      _buildToggleItem(
+                        Icons.repeat_one,
+                        "Répéter le morceau",
+                        _repetition,
+                        _onRepetitionChange,
+                      ),
+
+                      // ── Paramètres classiques ───────────────
+                      _buildSectionTitre("Application"),
+                      _buildSettingItem(Icons.notifications_none, "Notifications"),
+                      _buildSettingItem(Icons.history,            "Historique d'écoute"),
+                      _buildSettingItem(Icons.help_outline,       "Aide & Support"),
+
+                      const SizedBox(height: 24),
+                      _buildSettingItem(
+                        Icons.logout,
+                        "Déconnexion",
+                        isDestructive: true,
+                        onTap: _onDeconnexion,
+                      ),
+                      const SizedBox(height: 24),
+                    ],
                   ),
                 ),
               ],
@@ -126,40 +203,114 @@ class PageProfil extends StatelessWidget {
     );
   }
 
-  Widget _buildSettingItem(IconData icon, String title, {bool isDestructive = false}) {
+  // ── Widgets helpers ─────────────────────────────────────────
+
+  Widget _buildSectionTitre(String titre) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Text(
+        titre,
+        style: TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.bold,
+          color: Colors.white.withOpacity(0.4),
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildVolume() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.volume_down, color: Colors.white70, size: 24),
+          Expanded(
+            child: Slider(
+              value: _volume,
+              min: 0.0,
+              max: 1.0,
+              activeColor: const Color(0xFF6C63FF),
+              inactiveColor: Colors.white24,
+              onChanged: _onVolumeChange,
+            ),
+          ),
+          const Icon(Icons.volume_up, color: Colors.white70, size: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToggleItem(
+    IconData icon,
+    String titre,
+    bool valeur,
+    ValueChanged<bool> onChanged,
+  ) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withOpacity(0.05),
-        ),
+        border: Border.all(color: Colors.white.withOpacity(0.05)),
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            color: isDestructive ? Colors.redAccent : Colors.white70,
-            size: 28,
-          ),
+          Icon(icon, color: Colors.white70, size: 28),
           const SizedBox(width: 16),
-          Text(
-            title,
-            style: TextStyle(
-              color: isDestructive ? Colors.redAccent : Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          Text(titre, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500)),
           const Spacer(),
-          if (!isDestructive)
-            const Icon(
-              Icons.chevron_right,
-              color: Colors.white54,
-            ),
+          Switch(
+            value: valeur,
+            onChanged: onChanged,
+            activeColor: const Color(0xFF6C63FF),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSettingItem(
+    IconData icon,
+    String title, {
+    bool isDestructive = false,
+    VoidCallback? onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.05)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: isDestructive ? Colors.redAccent : Colors.white70, size: 28),
+            const SizedBox(width: 16),
+            Text(
+              title,
+              style: TextStyle(
+                color: isDestructive ? Colors.redAccent : Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const Spacer(),
+            if (!isDestructive)
+              const Icon(Icons.chevron_right, color: Colors.white54),
+          ],
+        ),
       ),
     );
   }
