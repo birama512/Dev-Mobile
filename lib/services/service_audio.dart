@@ -22,27 +22,20 @@ class ServiceAudio {
   //
   // Windows ne supporte PAS Uri.dataFromBytes → on passe toujours
   // par le chemin fichier. Les bytes ne sont utilisés que sur Web.
-  AudioSource _sourceFromMorceau(Morceau morceau) {
-    // Priorité 1 : chemin fichier valide (fonctionne partout)
-    if (morceau.chemin.isNotEmpty) {
-      return AudioSource.file(morceau.chemin);
-    }
-
-    // Priorité 2 : bytes en mémoire — uniquement sur Web
-    // (pas de support sur Windows/Linux/macOS via just_audio)
-    if (morceau.bytes != null && morceau.bytes!.isNotEmpty) {
-      // Sur Web, just_audio accepte une URI data
-      // Sur les autres plateformes, on écrit un fichier tmp
-      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-        // Écrit les bytes dans un fichier temporaire puis joue via chemin
-        final tmp = _ecrireFichierTemp(morceau);
-        if (tmp != null) return AudioSource.file(tmp);
-      }
-    }
-
-    // Fallback : URI vide → just_audio lancera une erreur gérée
-    return AudioSource.uri(Uri.parse(''));
+AudioSource _sourceFromMorceau(Morceau morceau) {
+  if (morceau.chemin.isNotEmpty) {
+    return AudioSource.uri(Uri.file(morceau.chemin)); // ← correction ici
   }
+
+  if (morceau.bytes != null && morceau.bytes!.isNotEmpty) {
+    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+      final tmp = _ecrireFichierTemp(morceau);
+      if (tmp != null) return AudioSource.uri(Uri.file(tmp)); // ← et ici
+    }
+  }
+
+  return AudioSource.uri(Uri.parse(''));
+}
 
   // Écrit les bytes d'un morceau dans un fichier temporaire.
   // Retourne le chemin du fichier créé, ou null si échec.
@@ -61,9 +54,9 @@ class ServiceAudio {
   }
 
   // ── Chargement ──────────────────────────────────────────────
-  Future<void> chargerFichier(String chemin) async {
-    await _player.setFilePath(chemin);
-  }
+ Future<void> chargerFichier(String chemin) async {
+  await _player.setAudioSource(AudioSource.uri(Uri.file(chemin)));
+}
 
   Future<bool> chargerPlaylist(List<Morceau> morceaux, {int index = 0}) async {
     // Filtre : garde uniquement les morceaux avec un chemin valide
