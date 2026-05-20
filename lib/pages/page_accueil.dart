@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-
+import 'package:just_audio/just_audio.dart';
 import '../models/morceau.dart';
 import '../services/service_fichier.dart';
 import '../services/database_service.dart';
+import '../services/service_audio.dart';
+import '../widgets/barre_lecteur.dart';
 import '../widgets/carte_morceau.dart';
 import 'page_favoris.dart';
 import 'page_lecteur.dart';
@@ -20,8 +22,11 @@ class PageAccueil extends StatefulWidget {
 class _PageAccueilState extends State<PageAccueil> {
   final ServiceFichiers _serviceFichiers = ServiceFichiers();
   final DatabaseService _db             = DatabaseService.instance;
+  final ServiceAudio _audio             = ServiceAudio.instance;
 
   List<Morceau> _bibliotheque = [];
+  List<Morceau> _playlistActive = [];
+  int _lastKnownIndex = 0;
   bool          _isLoading    = true;
 
   @override
@@ -29,20 +34,15 @@ class _PageAccueilState extends State<PageAccueil> {
     super.initState();
     _chargerBibliotheque();
   }
-
-  /// Charge depuis la DB, puis complète avec le scan système.
   Future<void> _chargerBibliotheque() async {
     try {
-      // 1. Charge d'abord ce qui est déjà en base (rapide)
       final enBase = await _db.lireMorceaux();
       if (mounted) {
         setState(() {
           _bibliotheque = enBase;
-          _isLoading    = enBase.isEmpty; // garde le spinner si vide
+          _isLoading    = enBase.isEmpty;
         });
       }
-
-      // 2. Scan système → persiste les nouveaux morceaux
       final morceauxScan = await _serviceFichiers.scannerBibliotheque();
       if (morceauxScan.isNotEmpty) {
         await _db.sauvegarderMorceaux(morceauxScan);
@@ -50,37 +50,23 @@ class _PageAccueilState extends State<PageAccueil> {
         if (mounted) setState(() => _bibliotheque = complet);
       }
     } catch (_) {
-      // En cas d'erreur DB (ex: 1re ouverture lente), on ignore
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
-  /// Import manuel : sauvegarde en DB puis ouvre directement le lecteur
-  /// avec les morceaux importés (chemin valide garanti).
   Future<void> _importerAudio() async {
     final morceaux = await _serviceFichiers.choisirFichiers();
     if (!mounted || morceaux.isEmpty) return;
-
-    // Ajoute en tête de liste pour affichage immédiat
     setState(() {
-      // Évite les doublons dans l'affichage
       final chemins = _bibliotheque.map((m) => m.chemin).toSet();
       final nouveaux = morceaux.where((m) => !chemins.contains(m.chemin)).toList();
       _bibliotheque.insertAll(0, nouveaux);
     });
-
-    // Persiste en base (les morceaux avec chemin valide)
     await _db.sauvegarderMorceaux(morceaux);
-
     if (!mounted) return;
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${morceaux.length} fichier(s) audio ajouté(s).')),
     );
-
-    // Ouvre le lecteur directement avec les morceaux importés
-    // (on n'attend PAS un rechargement DB pour garder les bytes/chemin frais)
     await Navigator.push(
       context,
       PageLecteur.route(
@@ -89,10 +75,19 @@ class _PageAccueilState extends State<PageAccueil> {
         initialIndex: 0,
       ),
     );
+    if (mounted) {
+      setState(() {
+        _playlistActive = morceaux;
+        _lastKnownIndex = 0;
+      });
+    }
   }
-
-  void _ouvrirLecteur(Morceau morceau, int index) {
-    Navigator.push(
+  Future<void> _ouvrirLecteur(Morceau morceau, int index) async {
+    setState(() {
+      _playlistActive = _bibliotheque;
+      _lastKnownIndex = index;
+    });
+    await Navigator.push(
       context,
       PageLecteur.route(
         morceau:      morceau,
@@ -101,12 +96,38 @@ class _PageAccueilState extends State<PageAccueil> {
       ),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     final hasAudio = _bibliotheque.isNotEmpty;
-
     return Scaffold(
+      bottomNavigationBar: StreamBuilder<int?>(
+        stream: _audio.currentIndexStream,
+        builder: (context, indexSnapshot) {
+          final playlist = _playlistActive;
+          if (playlist.isEmpty) return const SizedBox.shrink();
+          final streamIndex = indexSnapshot.data;
+          final safeIndex = (streamIndex ?? _lastKnownIndex)
+              .clamp(0, playlist.length - 1);
+          final morceauCourant = playlist[safeIndex];
+          return StreamBuilder<PlayerState>(
+            stream: _audio.playerStateStream,
+            builder: (context, playerSnapshot) {
+              final isPlaying = playerSnapshot.data?.playing ?? false;
+              return SafeArea(
+                top: false,
+                child: BarreLecteur(
+                  morceau: morceauCourant,
+                  playlist: playlist,
+                  initialIndex: safeIndex,
+                  reprendreLectureEnCours: true,
+                  isPlaying: isPlaying,
+                  onPlayPause: _audio.togglePlayPause,
+                ),
+              );
+            },
+          );
+        },
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _importerAudio,
         backgroundColor: Theme.of(context).primaryColor,
@@ -130,7 +151,6 @@ class _PageAccueilState extends State<PageAccueil> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Header ───────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.only(
                     left: 24, right: 24, top: 32, bottom: 16,
@@ -197,8 +217,6 @@ class _PageAccueilState extends State<PageAccueil> {
                     ],
                   ),
                 ),
-
-                // ── Chips ────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24.0, vertical: 8.0,
@@ -225,8 +243,6 @@ class _PageAccueilState extends State<PageAccueil> {
                     ],
                   ),
                 ),
-
-                // ── Compteur ─────────────────────────────────
                 const SizedBox(height: 12),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -243,8 +259,6 @@ class _PageAccueilState extends State<PageAccueil> {
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                // ── Liste ─────────────────────────────────────
                 Expanded(
                   child: _isLoading
                       ? const Center(child: CircularProgressIndicator())

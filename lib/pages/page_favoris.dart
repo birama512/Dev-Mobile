@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/morceau.dart';
 import '../services/service_audio.dart';
-import '../services/service_fichier.dart';
 import '../services/database_service.dart';
 import '../widgets/carte_morceau.dart';
 import 'page_lecteur.dart';
@@ -14,23 +13,15 @@ class PageFavoris extends StatefulWidget {
 }
 
 class _PageFavorisState extends State<PageFavoris> {
-  // ── Services ────────────────────────────────────────────────
   final ServiceAudio    _audio    = ServiceAudio.instance;
-  final ServiceFichiers _fichiers = ServiceFichiers();
   final DatabaseService _db       = DatabaseService.instance;
-
-  // ── État ────────────────────────────────────────────────────
   List<Morceau> _favoris    = [];
   bool          _chargement = false;
-
-  // ── Cycle de vie ────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _chargerFavoris();
   }
-
-  /// Charge les favoris depuis la base de données SQLite.
   Future<void> _chargerFavoris() async {
     setState(() => _chargement = true);
     final favoris = await _db.lireFavoris();
@@ -40,8 +31,6 @@ class _PageFavorisState extends State<PageFavoris> {
       _chargement = false;
     });
   }
-
-  /// Lance la lecture d'un morceau dans la liste des favoris.
   Future<void> _jouerMorceau(Morceau morceau, int index) async {
     final charge = await _audio.chargerPlaylist(_favoris, index: index);
     if (!charge) {
@@ -50,42 +39,113 @@ class _PageFavorisState extends State<PageFavoris> {
     }
     await _audio.play();
   }
-
-  /// Retire un morceau des favoris (glisser pour supprimer) — persisté en DB.
   Future<void> _retirerFavori(int index) async {
     final morceau = _favoris[index];
     setState(() => _favoris.removeAt(index));
     await _db.retirerFavori(morceau.chemin);
   }
+  Future<void> _ajouterDepuisBibliotheque() async {
+    final bibliotheque = await _db.lireMorceaux();
+    final cheminsFavoris = _favoris.map((m) => m.chemin).toSet();
+    final disponibles = bibliotheque
+        .where((m) => !cheminsFavoris.contains(m.chemin))
+        .toList();
+    if (disponibles.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucun nouveau morceau à ajouter depuis la bibliothèque.')),
+      );
+      return;
+    }
+    final selection = <String>{};
+    final choisis = await showDialog<List<Morceau>>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1E1E2C),
+            title: const Text(
+              'Ajouter aux favoris',
+              style: TextStyle(color: Colors.white),
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 360,
+              child: ListView.builder(
+                itemCount: disponibles.length,
+                itemBuilder: (_, index) {
+                  final morceau = disponibles[index];
+                  final selected = selection.contains(morceau.chemin);
+                  return CheckboxListTile(
+                    activeColor: const Color(0xFF6C63FF),
+                    value: selected,
+                    onChanged: (value) {
+                      setModalState(() {
+                        if (value == true) {
+                          selection.add(morceau.chemin);
+                        } else {
+                          selection.remove(morceau.chemin);
+                        }
+                      });
+                    },
+                    title: Text(
+                      morceau.titre,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    subtitle: Text(
+                      morceau.artiste,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+              ),
+              TextButton(
+                onPressed: selection.isEmpty
+                    ? null
+                    : () {
+                        final result = disponibles
+                            .where((m) => selection.contains(m.chemin))
+                            .toList();
+                        Navigator.pop(ctx, result);
+                      },
+                child: const Text('Ajouter', style: TextStyle(color: Color(0xFF6C63FF))),
+              ),
+            ],
+          );
+        },
+      ),
+    );
 
-  /// Importe des fichiers et les ajoute directement aux favoris en DB.
-  Future<void> _importerFichiers() async {
-    final morceaux = await _fichiers.choisirFichiers();
-    if (morceaux.isEmpty) return;
+    if (choisis == null || choisis.isEmpty) return;
 
-    // Sauvegarde chaque morceau comme favori en base
-    for (final m in morceaux) {
+    for (final m in choisis) {
       await _db.ajouterFavori(m);
     }
 
-    // Recharge la liste depuis la DB pour rester cohérent
     await _chargerFavoris();
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${morceaux.length} morceau(x) ajouté(s) aux favoris.')),
-      );
-    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${choisis.length} morceau(x) ajouté(s) aux favoris.')),
+    );
   }
-
-  // ── UI ──────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -99,7 +159,6 @@ class _PageFavorisState extends State<PageFavoris> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
                 Padding(
                   padding: const EdgeInsets.only(left: 16, right: 24, top: 24, bottom: 16),
                   child: Row(
@@ -127,14 +186,12 @@ class _PageFavorisState extends State<PageFavoris> {
                       IconButton(
                         icon: const Icon(Icons.add, color: Color(0xFF6C63FF), size: 28),
                         tooltip: 'Ajouter aux favoris',
-                        onPressed: _importerFichiers,
+                        onPressed: _ajouterDepuisBibliotheque,
                       ),
                       const Icon(Icons.favorite, color: Color(0xFF6C63FF), size: 28),
                     ],
                   ),
                 ),
-
-                // Bouton "Tout lire"
                 if (_favoris.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -167,8 +224,6 @@ class _PageFavorisState extends State<PageFavoris> {
                   ),
 
                 const SizedBox(height: 16),
-
-                // Contenu
                 Expanded(
                   child: _chargement
                       ? const Center(
@@ -182,8 +237,6 @@ class _PageFavorisState extends State<PageFavoris> {
                               itemCount: _favoris.length,
                               itemBuilder: (context, index) {
                                 final morceau = _favoris[index];
-
-                                // Glisser vers la gauche pour retirer des favoris
                                 return Dismissible(
                                   key: Key(morceau.chemin + index.toString()),
                                   direction: DismissDirection.endToStart,
@@ -240,7 +293,7 @@ class _PageFavorisState extends State<PageFavoris> {
           ),
           const SizedBox(height: 8),
           TextButton.icon(
-            onPressed: _importerFichiers,
+            onPressed: _ajouterDepuisBibliotheque,
             icon: const Icon(Icons.add, color: Color(0xFF6C63FF)),
             label: const Text(
               'Ajouter des morceaux',

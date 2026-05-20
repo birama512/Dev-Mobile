@@ -10,10 +10,7 @@ class PageProfil extends StatefulWidget {
 }
 
 class _PageProfilState extends State<PageProfil> {
-  // ── Service ─────────────────────────────────────────────────
   final ServiceAudio _audio = ServiceAudio.instance;
-
-  // ── Paramètres utilisateur (à persister avec SharedPreferences) ──
   double _volume      = 1.0;
   bool   _aleatoire   = false;
   bool   _repetition  = false;
@@ -21,17 +18,12 @@ class _PageProfilState extends State<PageProfil> {
   @override
   void initState() {
     super.initState();
-    // Synchronise les toggles avec l'état actuel du player
     _volume = _audio.volume;
   }
-
-  // ── Handlers ────────────────────────────────────────────────
-
   Future<void> _onVolumeChange(double v) async {
     setState(() => _volume = v);
     await _audio.setVolume(v);
   }
-
   Future<void> _onAleatoireChange(bool v) async {
     setState(() => _aleatoire = v);
     await _audio.setShuffle(v);
@@ -43,19 +35,15 @@ class _PageProfilState extends State<PageProfil> {
   }
 
   Future<void> _onDeconnexion() async {
-    // Arrête la lecture proprement avant de déconnecter
     await _audio.stop();
     if (mounted) Navigator.pop(context);
   }
-
-  // ── UI ──────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -69,7 +57,6 @@ class _PageProfilState extends State<PageProfil> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Header
                 Padding(
                   padding: const EdgeInsets.only(left: 16, right: 24, top: 24, bottom: 16),
                   child: Row(
@@ -94,7 +81,6 @@ class _PageProfilState extends State<PageProfil> {
                 ),
                 const SizedBox(height: 32),
 
-                // Avatar
                 Container(
                   width: 120,
                   height: 120,
@@ -132,8 +118,6 @@ class _PageProfilState extends State<PageProfil> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-
-                // Statut du player en temps réel
                 const SizedBox(height: 12),
                 StreamBuilder<PlayerState>(
                   stream: _audio.playerStateStream,
@@ -151,18 +135,15 @@ class _PageProfilState extends State<PageProfil> {
 
                 const SizedBox(height: 32),
 
-                // Options
                 Expanded(
                   child: ListView(
                     physics: const BouncingScrollPhysics(),
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     children: [
 
-                      // ── Volume ──────────────────────────────
                       _buildSectionTitre("Audio"),
                       _buildVolume(),
 
-                      // ── Lecture aléatoire ───────────────────
                       _buildToggleItem(
                         Icons.shuffle,
                         "Lecture aléatoire",
@@ -170,7 +151,6 @@ class _PageProfilState extends State<PageProfil> {
                         _onAleatoireChange,
                       ),
 
-                      // ── Répétition ──────────────────────────
                       _buildToggleItem(
                         Icons.repeat_one,
                         "Répéter le morceau",
@@ -178,7 +158,6 @@ class _PageProfilState extends State<PageProfil> {
                         _onRepetitionChange,
                       ),
 
-                      // ── Paramètres classiques ───────────────
                       _buildSectionTitre("Application"),
                       _buildSettingItem(Icons.notifications_none, "Notifications"),
                       _buildSettingItem(Icons.history,            "Historique d'écoute"),
@@ -203,7 +182,6 @@ class _PageProfilState extends State<PageProfil> {
     );
   }
 
-  // ── Widgets helpers ─────────────────────────────────────────
 
   Widget _buildSectionTitre(String titre) {
     return Padding(

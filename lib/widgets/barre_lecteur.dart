@@ -6,6 +6,7 @@ class BarreLecteur extends StatelessWidget {
   final Morceau morceau;
   final List<Morceau> playlist;
   final int initialIndex;
+  final bool reprendreLectureEnCours;
   final bool isPlaying;
   final VoidCallback onPlayPause;
 
@@ -14,6 +15,7 @@ class BarreLecteur extends StatelessWidget {
     required this.morceau,
     this.playlist = const [],
     this.initialIndex = 0,
+    this.reprendreLectureEnCours = false,
     this.isPlaying = true,
     required this.onPlayPause,
   });
@@ -28,6 +30,7 @@ class BarreLecteur extends StatelessWidget {
             morceau: morceau,
             playlist: playlist.isEmpty ? [morceau] : playlist,
             initialIndex: initialIndex,
+            reprendreLectureEnCours: reprendreLectureEnCours,
           ),
         );
       },

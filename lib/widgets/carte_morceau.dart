@@ -17,7 +17,6 @@ class CarteMorceau extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Material(
-        // Material transparent pour que ListTile puisse peindre ses effets
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(16),
         child: Ink(

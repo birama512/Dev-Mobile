@@ -14,35 +14,27 @@ class PageRecherche extends StatefulWidget {
 }
 
 class _PageRechercheState extends State<PageRecherche> {
-  // ── Services ────────────────────────────────────────────────
   final ServiceAudio    _audio = ServiceAudio.instance;
   final DatabaseService _db    = DatabaseService.instance;
-
-  // ── État ────────────────────────────────────────────────────
   List<Morceau> _tousMorceaux = [];
   List<Morceau> _resultats    = [];
   String        _requete      = '';
   bool          _chargement   = true;
-
-  // ── Cycle de vie ────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _chargerBibliotheque();
   }
-
-  /// Charge tous les morceaux depuis la base de données.
   Future<void> _chargerBibliotheque() async {
     final morceaux = await _db.lireMorceaux();
     if (!mounted) return;
     setState(() {
       _tousMorceaux = morceaux;
-      _resultats    = morceaux; // au départ : tout est affiché
+      _resultats    = morceaux;
       _chargement   = false;
     });
   }
 
-  /// Filtre en temps réel via la DB (recherche côté SQL).
   Future<void> _rechercher(String requete) async {
     final q = requete.trim();
     setState(() => _requete = q.toLowerCase());
@@ -52,27 +44,23 @@ class _PageRechercheState extends State<PageRecherche> {
       return;
     }
 
-    // Délègue la recherche à la DB pour filtrer sur titre ET artiste
     final resultats = await _db.rechercherMorceaux(q);
     if (!mounted) return;
     setState(() => _resultats = resultats);
   }
 
-  /// Lance la lecture d'un morceau dans le contexte des résultats.
   Future<void> _jouerMorceau(Morceau morceau, int index) async {
     final charge = await _audio.chargerPlaylist(_resultats, index: index);
     if (!charge) await _audio.chargerEtLire(morceau);
     else await _audio.play();
   }
 
-  // ── UI ──────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -86,7 +74,6 @@ class _PageRechercheState extends State<PageRecherche> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
                 Padding(
                   padding: const EdgeInsets.only(
                     left: 16, right: 24, top: 24, bottom: 16,
@@ -116,7 +103,6 @@ class _PageRechercheState extends State<PageRecherche> {
                   ),
                 ),
 
-                // Barre de recherche
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24.0, vertical: 8.0,
@@ -125,7 +111,6 @@ class _PageRechercheState extends State<PageRecherche> {
                 ),
                 const SizedBox(height: 16),
 
-                // Label dynamique
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24.0),
                   child: Text(
@@ -142,8 +127,6 @@ class _PageRechercheState extends State<PageRecherche> {
                   ),
                 ),
                 const SizedBox(height: 16),
-
-                // Contenu
                 Expanded(
                   child: _chargement
                       ? const Center(

@@ -1,43 +1,37 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path/path.dart';
 import '../models/morceau.dart';
 import '../models/playlist.dart';
 
-/// Service singleton qui gère toute la persistance locale via SQLite.
-/// Compatible Windows / Linux / macOS grâce à sqflite_common_ffi.
+
 class DatabaseService {
-  // ── Singleton ────────────────────────────────────────────────
   static final DatabaseService instance = DatabaseService._internal();
   factory DatabaseService() => instance;
   DatabaseService._internal();
 
   static Database? _db;
-
-  // ── Noms des tables ─────────────────────────────────────────
   static const String _tableMorceaux  = 'morceaux';
   static const String _tablePlaylists = 'playlists';
   static const String _tableLiaison   = 'playlist_morceaux';
   static const String _tableFavoris   = 'favoris';
-
-  // ── Ouverture / création ─────────────────────────────────────
   Future<Database> get db async {
     _db ??= await _ouvrir();
     return _db!;
   }
 
   Future<Database> _ouvrir() async {
-    // Chemin fiable sur toutes les plateformes sans path_provider
     String chemin;
-    if (Platform.isWindows) {
-      // %APPDATA%\musique.db  ex: C:\Users\xxx\AppData\Roaming\musique.db
+    if (kIsWeb) {
+      chemin = join(await databaseFactory.getDatabasesPath(), 'musique.db');
+    } else if (Platform.isWindows) {
       final appData = Platform.environment['APPDATA'] ?? '.';
       chemin = join(appData, 'musique.db');
     } else if (Platform.isLinux || Platform.isMacOS) {
       final home = Platform.environment['HOME'] ?? '.';
       chemin = join(home, '.local', 'share', 'musique.db');
     } else {
-      // Android / iOS : getDatabasesPath() fonctionne normalement
       chemin = join(await databaseFactory.getDatabasesPath(), 'musique.db');
     }
 
@@ -91,9 +85,6 @@ class DatabaseService {
     await db.execute('PRAGMA foreign_keys = ON');
   }
 
-  // ════════════════════════════════════════════════════════════
-  // MORCEAUX
-  // ════════════════════════════════════════════════════════════
 
   Future<int> sauvegarderMorceau(Morceau morceau) async {
     final base = await db;
@@ -111,7 +102,6 @@ class DatabaseService {
   }
 
   Future<void> sauvegarderMorceaux(List<Morceau> morceaux) async {
-    // Ignore les morceaux sans chemin valide (ex: bytes-only sur mobile)
     final valides = morceaux.where((m) => m.chemin.isNotEmpty).toList();
     if (valides.isEmpty) return;
 
@@ -159,9 +149,6 @@ class DatabaseService {
     );
   }
 
-  // ════════════════════════════════════════════════════════════
-  // PLAYLISTS
-  // ════════════════════════════════════════════════════════════
 
   Future<int> creerPlaylist(String nom) async {
     final base = await db;
@@ -254,9 +241,6 @@ class DatabaseService {
     );
   }
 
-  // ════════════════════════════════════════════════════════════
-  // FAVORIS
-  // ════════════════════════════════════════════════════════════
 
   Future<void> ajouterFavori(Morceau morceau) async {
     final base = await db;
@@ -318,10 +302,6 @@ class DatabaseService {
     ''', [chemin]);
     return rows.isNotEmpty;
   }
-
-  // ════════════════════════════════════════════════════════════
-  // UTILITAIRE
-  // ════════════════════════════════════════════════════════════
 
   Morceau _rowVersMorceau(Map<String, dynamic> row) {
     return Morceau(

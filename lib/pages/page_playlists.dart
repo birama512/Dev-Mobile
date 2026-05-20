@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../models/playlist.dart';
 import '../models/morceau.dart';
 import '../services/service_audio.dart';
-import '../services/service_fichier.dart';
 import '../services/database_service.dart';
 import 'page_details_playlist.dart';
 
@@ -14,23 +13,17 @@ class PagePlaylists extends StatefulWidget {
 }
 
 class _PagePlaylistsState extends State<PagePlaylists> {
-  // ── Services ────────────────────────────────────────────────
   final ServiceAudio    _audio    = ServiceAudio.instance;
-  final ServiceFichiers _fichiers = ServiceFichiers();
   final DatabaseService _db       = DatabaseService.instance;
-
-  // ── État ────────────────────────────────────────────────────
   List<Playlist> _playlists  = [];
   bool           _chargement = false;
 
-  // ── Cycle de vie ────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _chargerPlaylists();
   }
 
-  /// Charge toutes les playlists depuis la base de données SQLite.
   Future<void> _chargerPlaylists() async {
     setState(() => _chargement = true);
     final playlists = await _db.lirePlaylists();
@@ -41,15 +34,12 @@ class _PagePlaylistsState extends State<PagePlaylists> {
     });
   }
 
-  /// Lance la lecture d'une playlist entière via ServiceAudio.
   Future<void> _lancerPlaylist(Playlist playlist) async {
     if (playlist.morceaux.isEmpty) return;
     await _audio.chargerPlaylist(playlist.morceaux, index: 0);
     await _audio.play();
   }
 
-  /// Ouvre une boîte de dialogue pour saisir le nom d'une nouvelle playlist,
-  /// puis la crée en base de données.
   Future<void> _creerPlaylist() async {
     final nomController = TextEditingController();
 
@@ -103,36 +93,122 @@ class _PagePlaylistsState extends State<PagePlaylists> {
     }
   }
 
-  /// Importe des fichiers audio, crée une playlist horodatée et
-  /// y ajoute tous les morceaux — le tout persisté en base.
-  Future<void> _importerFichiers() async {
-    final morceaux = await _fichiers.choisirFichiers();
-    if (morceaux.isEmpty) return;
+  Future<void> _creerPlaylistDepuisBibliotheque() async {
+    final bibliotheque = await _db.lireMorceaux();
+    if (bibliotheque.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aucun morceau importé. Ajoute d\'abord des audios dans la bibliothèque.')),
+      );
+      return;
+    }
 
-    // 1. Sauvegarde les morceaux dans la bibliothèque
-    await _db.sauvegarderMorceaux(morceaux);
+    final nomController = TextEditingController();
+    final selection = <String>{};
 
-    // 2. Crée une playlist horodatée
-    final nom = 'Import ${DateTime.now().hour}h${DateTime.now().minute.toString().padLeft(2, '0')}';
+    final result = await showDialog<(String, List<Morceau>)>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) {
+          return AlertDialog(
+            backgroundColor: const Color(0xFF1E1E2C),
+            title: const Text('Nouvelle playlist', style: TextStyle(color: Colors.white)),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nomController,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: InputDecoration(
+                      hintText: 'Nom de la playlist',
+                      hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
+                      enabledBorder: UnderlineInputBorder(
+                        borderSide: BorderSide(color: Colors.white.withOpacity(0.3)),
+                      ),
+                      focusedBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFF6C63FF)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 280,
+                    child: ListView.builder(
+                      itemCount: bibliotheque.length,
+                      itemBuilder: (_, index) {
+                        final morceau = bibliotheque[index];
+                        final selected = selection.contains(morceau.chemin);
+                        return CheckboxListTile(
+                          activeColor: const Color(0xFF6C63FF),
+                          value: selected,
+                          onChanged: (value) {
+                            setModalState(() {
+                              if (value == true) {
+                                selection.add(morceau.chemin);
+                              } else {
+                                selection.remove(morceau.chemin);
+                              }
+                            });
+                          },
+                          title: Text(
+                            morceau.titre,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          subtitle: Text(
+                            morceau.artiste,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                          controlAffinity: ListTileControlAffinity.leading,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+              ),
+              TextButton(
+                onPressed: () {
+                  final nom = nomController.text.trim();
+                  if (nom.isEmpty || selection.isEmpty) return;
+                  final morceaux = bibliotheque
+                      .where((m) => selection.contains(m.chemin))
+                      .toList();
+                  Navigator.pop(ctx, (nom, morceaux));
+                },
+                child: const Text('Créer', style: TextStyle(color: Color(0xFF6C63FF))),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (result == null) return;
+    final nom = result.$1;
+    final morceaux = result.$2;
+    if (nom.isEmpty || morceaux.isEmpty) return;
+
     await _db.creerPlaylist(nom);
-
-    // 3. Ajoute chaque morceau à cette playlist
     for (final m in morceaux) {
       await _db.ajouterMorceauAPlaylist(nom, m);
     }
 
-    // 4. Recharge les playlists depuis la base
     await _chargerPlaylists();
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${morceaux.length} morceau(x) importé(s) dans "$nom".',
-          ),
-        ),
-      );
-    }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Playlist "$nom" créée avec ${morceaux.length} morceau(x).')),
+    );
   }
 
   /// Supprime une playlist après confirmation.
@@ -167,14 +243,12 @@ class _PagePlaylistsState extends State<PagePlaylists> {
     await _chargerPlaylists();
   }
 
-  // ── UI ──────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Background
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -188,7 +262,6 @@ class _PagePlaylistsState extends State<PagePlaylists> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
                 Padding(
                   padding: const EdgeInsets.only(left: 16, right: 24, top: 24, bottom: 16),
                   child: Row(
@@ -213,13 +286,11 @@ class _PagePlaylistsState extends State<PagePlaylists> {
                         ),
                       ),
                       const Spacer(),
-                      // Bouton importer des fichiers
                       IconButton(
-                        icon: const Icon(Icons.upload_file, color: Color(0xFF6C63FF), size: 26),
-                        tooltip: 'Importer des fichiers',
-                        onPressed: _importerFichiers,
+                        icon: const Icon(Icons.library_add, color: Color(0xFF6C63FF), size: 26),
+                        tooltip: 'Créer depuis la bibliothèque',
+                        onPressed: _creerPlaylistDepuisBibliotheque,
                       ),
-                      // Bouton nouvelle playlist (vide)
                       IconButton(
                         icon: const Icon(Icons.add, color: Color(0xFF6C63FF), size: 28),
                         tooltip: 'Nouvelle playlist',
@@ -230,7 +301,6 @@ class _PagePlaylistsState extends State<PagePlaylists> {
                 ),
                 const SizedBox(height: 8),
 
-                // Contenu
                 Expanded(
                   child: _chargement
                       ? const Center(
@@ -293,10 +363,10 @@ class _PagePlaylistsState extends State<PagePlaylists> {
               ),
               const SizedBox(width: 8),
               TextButton.icon(
-                onPressed: _importerFichiers,
-                icon: const Icon(Icons.upload_file, color: Color(0xFF6C63FF)),
+                onPressed: _creerPlaylistDepuisBibliotheque,
+                icon: const Icon(Icons.library_add, color: Color(0xFF6C63FF)),
                 label: const Text(
-                  'Importer',
+                  'Depuis bibliothèque',
                   style: TextStyle(color: Color(0xFF6C63FF)),
                 ),
               ),
@@ -323,7 +393,6 @@ class _PagePlaylistsState extends State<PagePlaylists> {
             builder: (_) => PageDetailsPlaylist(playlist: playlist),
           ),
         );
-        // Recharge au retour si des morceaux ont été ajoutés
         await _chargerPlaylists();
       },
       onLongPress: () => _lancerPlaylist(playlist),
@@ -348,11 +417,9 @@ class _PagePlaylistsState extends State<PagePlaylists> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Actions : play + supprimer
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Bouton supprimer
                   GestureDetector(
                     onTap: () => _supprimerPlaylist(playlist),
                     child: Container(
@@ -368,7 +435,6 @@ class _PagePlaylistsState extends State<PagePlaylists> {
                       ),
                     ),
                   ),
-                  // Bouton play
                   GestureDetector(
                     onTap: () => _lancerPlaylist(playlist),
                     child: Container(

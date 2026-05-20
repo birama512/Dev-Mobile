@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import '../models/morceau.dart';
 
@@ -18,27 +19,51 @@ class ServiceAudio {
   bool   get isPlaying => _player.playing;
   double get volume    => _player.volume;
 
-  // ── Construit la source audio selon la plateforme ───────────
-  //
-  // Windows ne supporte PAS Uri.dataFromBytes → on passe toujours
-  // par le chemin fichier. Les bytes ne sont utilisés que sur Web.
-AudioSource _sourceFromMorceau(Morceau morceau) {
-  if (morceau.chemin.isNotEmpty) {
-    return AudioSource.uri(Uri.file(morceau.chemin)); // ← correction ici
-  }
-
-  if (morceau.bytes != null && morceau.bytes!.isNotEmpty) {
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
-      final tmp = _ecrireFichierTemp(morceau);
-      if (tmp != null) return AudioSource.uri(Uri.file(tmp)); // ← et ici
+  AudioSource _sourceFromMorceau(Morceau morceau) {
+    if (morceau.chemin.isNotEmpty) {
+      if (kIsWeb) {
+        final webUri = _normaliserUriWeb(morceau.chemin);
+        if (webUri != null) return AudioSource.uri(webUri);
+      }
+      return AudioSource.file(morceau.chemin);
     }
+
+    if (morceau.bytes != null && morceau.bytes!.isNotEmpty) {
+      if (kIsWeb) {
+        final dataUri = Uri.dataFromBytes(
+          morceau.bytes!,
+          mimeType: morceau.mimeType ?? 'audio/mpeg',
+        );
+        return AudioSource.uri(dataUri);
+      }
+      if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+        final tmp = _ecrireFichierTemp(morceau);
+        if (tmp != null) return AudioSource.file(tmp);
+      }
+    }
+    return AudioSource.uri(Uri.parse(''));
   }
 
-  return AudioSource.uri(Uri.parse(''));
-}
+  Uri? _normaliserUriWeb(String valeur) {
+    final brut = valeur.trim();
+    if (brut.isEmpty) return null;
 
-  // Écrit les bytes d'un morceau dans un fichier temporaire.
-  // Retourne le chemin du fichier créé, ou null si échec.
+    final candidats = <String>{
+      brut,
+      Uri.decodeFull(brut),
+      Uri.decodeComponent(brut),
+    };
+
+    for (final candidat in candidats) {
+      final uri = Uri.tryParse(candidat);
+      if (uri != null && uri.hasScheme) {
+        return uri;
+      }
+    }
+
+    return null;
+  }
+
   String? _ecrireFichierTemp(Morceau morceau) {
     try {
       final ext = morceau.mimeType?.contains('mp4') == true ? 'm4a'
@@ -53,30 +78,26 @@ AudioSource _sourceFromMorceau(Morceau morceau) {
     }
   }
 
-  // ── Chargement ──────────────────────────────────────────────
- Future<void> chargerFichier(String chemin) async {
-  await _player.setAudioSource(AudioSource.uri(Uri.file(chemin)));
-}
+  Future<void> chargerFichier(String chemin) async {
+    await _player.setFilePath(chemin);
+  }
 
   Future<bool> chargerPlaylist(List<Morceau> morceaux, {int index = 0}) async {
-    // Filtre : garde uniquement les morceaux avec un chemin valide
     final valides = morceaux.where((m) => m.chemin.isNotEmpty || m.bytes != null).toList();
 
     if (valides.isEmpty) {
-      print('[ServiceAudio] Aucun morceau avec source valide.');
+      debugPrint('[ServiceAudio] Aucun morceau avec source valide.');
       return false;
     }
 
-    final sources    = valides.map(_sourceFromMorceau).toList();
-    final safeIndex  = index.clamp(0, valides.length - 1);
+    final sources   = valides.map(_sourceFromMorceau).toList();
+    final safeIndex = index.clamp(0, valides.length - 1);
 
-    print('[ServiceAudio] Chargement ${valides.length} morceaux, index=$safeIndex');
-    print('[ServiceAudio] Premier chemin : ${valides[safeIndex].chemin}');
+    debugPrint('[ServiceAudio] Chargement ${valides.length} morceaux, index=$safeIndex');
+    debugPrint('[ServiceAudio] Premier chemin : ${valides[safeIndex].chemin}');
 
-    await _player.setAudioSource(
-      ConcatenatingAudioSource(children: sources),
-      initialIndex: safeIndex,
-    );
+    final playlist = ConcatenatingAudioSource(children: sources);
+    await _player.setAudioSource(playlist, initialIndex: safeIndex);
     return true;
   }
 
@@ -87,7 +108,6 @@ AudioSource _sourceFromMorceau(Morceau morceau) {
     return true;
   }
 
-  // ── Contrôles ───────────────────────────────────────────────
   Future<void> play()           async => _player.play();
   Future<void> pause()          async => _player.pause();
   Future<void> stop()           async => _player.stop();
@@ -102,7 +122,6 @@ AudioSource _sourceFromMorceau(Morceau morceau) {
     await _player.setVolume(valeur.clamp(0.0, 1.0));
   }
 
-  // ── Navigation playlist ─────────────────────────────────────
   Future<void> suivant() async {
     if (_player.hasNext) await _player.seekToNext();
   }
@@ -115,10 +134,7 @@ AudioSource _sourceFromMorceau(Morceau morceau) {
     }
   }
 
-  // ── Modes ───────────────────────────────────────────────────
   Future<void> setLoopMode(LoopMode mode) async => _player.setLoopMode(mode);
   Future<void> setShuffle(bool actif)     async => _player.setShuffleModeEnabled(actif);
-
-  // ── Nettoyage ───────────────────────────────────────────────
   Future<void> dispose() async => _player.dispose();
 }

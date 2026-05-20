@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -11,26 +13,30 @@ class PageLecteur extends StatefulWidget {
   final Morceau morceau;
   final List<Morceau> playlist;
   final int initialIndex;
+  final bool reprendreLectureEnCours;
 
   const PageLecteur({
     super.key,
     required this.morceau,
     this.playlist = const [],
     this.initialIndex = 0,
+    this.reprendreLectureEnCours = false,
   });
 
   static Route<void> route({
     required Morceau morceau,
     List<Morceau> playlist = const [],
     int initialIndex = 0,
+    bool reprendreLectureEnCours = false,
   }) {
     return PageRouteBuilder<void>(
-      pageBuilder: (_, animation, __) => PageLecteur(
+      pageBuilder: (_, animation, unused) => PageLecteur(
         morceau:      morceau,
         playlist:     playlist,
         initialIndex: initialIndex,
+        reprendreLectureEnCours: reprendreLectureEnCours,
       ),
-      transitionsBuilder: (_, animation, __, child) {
+      transitionsBuilder: (_, animation, unused, child) {
         final tween = Tween(
           begin: const Offset(0.0, 1.0),
           end:   Offset.zero,
@@ -59,16 +65,28 @@ class _PageLecteurState extends State<PageLecteur> {
   LoopMode      _loopMode       = LoopMode.off;
   List<Morceau> _queue          = const [];
   int           _currentIndex   = 0;
+  StreamSubscription<int?>? _indexSub;
 
   @override
   void initState() {
     super.initState();
-    // Petit délai pour laisser le widget s'afficher avant de charger l'audio
-    Future.delayed(const Duration(milliseconds: 200), _preparePlayback);
+    _indexSub = _serviceAudio.currentIndexStream.listen((index) {
+      if (!mounted || index == null) return;
+      if (index < 0 || (_queue.isNotEmpty && index >= _queue.length)) return;
+      setState(() => _currentIndex = index);
+    });
+    if (widget.reprendreLectureEnCours) {
+      _synchroniserDepuisLecteurActif();
+    } else {
+      Future.delayed(const Duration(milliseconds: 200), _preparePlayback);
+    }
   }
 
-  // ── Préparation ──────────────────────────────────────────────
-
+  @override
+  void dispose() {
+    _indexSub?.cancel();
+    super.dispose();
+  }
   List<Morceau> _buildQueue() {
     final base = widget.playlist.isNotEmpty
         ? widget.playlist
@@ -77,7 +95,7 @@ class _PageLecteurState extends State<PageLecteur> {
   }
 
   bool _estLisible(Morceau m) {
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       return m.chemin.isNotEmpty && File(m.chemin).existsSync();
     }
     return m.chemin.isNotEmpty || (m.bytes?.isNotEmpty ?? false);
@@ -100,8 +118,6 @@ class _PageLecteurState extends State<PageLecteur> {
       }
       return;
     }
-
-    // Trouve l'index du morceau sélectionné dans la queue filtrée
     int safeIndex = queue.indexWhere(
       (m) => m.chemin == widget.morceau.chemin,
     );
@@ -151,7 +167,26 @@ class _PageLecteurState extends State<PageLecteur> {
     }
   }
 
-  // ── Contrôles ────────────────────────────────────────────────
+  void _synchroniserDepuisLecteurActif() {
+    final queue = _buildQueue();
+    final playerHasSource = _serviceAudio.player.sequence?.isNotEmpty ?? false;
+
+    int safeIndex = _serviceAudio.player.currentIndex ?? widget.initialIndex;
+    if (queue.isNotEmpty) {
+      safeIndex = safeIndex.clamp(0, queue.length - 1);
+    } else {
+      safeIndex = 0;
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _queue = queue;
+      _currentIndex = safeIndex;
+      _hasAudio = playerHasSource || queue.isNotEmpty;
+      _isPreparing = false;
+      _erreur = null;
+    });
+  }
 
   Future<void> _importAndPlay() async {
     final morceaux = await _serviceFichiers.choisirFichiers();
@@ -196,13 +231,41 @@ class _PageLecteurState extends State<PageLecteur> {
     if (mounted) setState(() => _currentIndex = index);
   }
 
+  Future<void> _goToPrevious() async {
+    if (_queue.isEmpty) {
+      await _serviceAudio.precedent();
+      return;
+    }
+
+    final shouldRestartCurrent = _serviceAudio.player.position.inSeconds >= 3;
+    if (shouldRestartCurrent) {
+      await _serviceAudio.seek(Duration.zero);
+      return;
+    }
+
+    final previousIndex = _currentIndex - 1;
+    if (previousIndex >= 0) {
+      await _seekToIndex(previousIndex);
+    }
+  }
+
+  Future<void> _goToNext() async {
+    if (_queue.isEmpty) {
+      await _serviceAudio.suivant();
+      return;
+    }
+
+    final nextIndex = _currentIndex + 1;
+    if (nextIndex < _queue.length) {
+      await _seekToIndex(nextIndex);
+    }
+  }
+
   String _fmt(Duration d) {
     final m = d.inMinutes;
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$m:$s';
   }
-
-  // ── Build ────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -216,7 +279,6 @@ class _PageLecteurState extends State<PageLecteur> {
       backgroundColor: const Color(0xFF0D0D14),
       body: Stack(
         children: [
-          // Background gradient
           Container(
             decoration: const BoxDecoration(
               gradient: LinearGradient(
@@ -226,7 +288,6 @@ class _PageLecteurState extends State<PageLecteur> {
               ),
             ),
           ),
-          // Glow
           Positioned(
             top: 90, left: -50,
             child: Container(
@@ -247,19 +308,16 @@ class _PageLecteurState extends State<PageLecteur> {
               child: Column(
                 children: [
                   const SizedBox(height: 8),
-                  // Top bar
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       IconButton(
-                        icon: Icon(
-                          _isMinimized
-                              ? Icons.keyboard_arrow_up
-                              : Icons.keyboard_arrow_down,
-                          size: 32, color: Colors.white,
+                        icon: const Icon(
+                          Icons.arrow_back,
+                          size: 28,
+                          color: Colors.white,
                         ),
-                        onPressed: () =>
-                            setState(() => _isMinimized = !_isMinimized),
+                        onPressed: () => Navigator.pop(context),
                       ),
                       Column(children: [
                         Text(
@@ -282,8 +340,18 @@ class _PageLecteurState extends State<PageLecteur> {
                         color: const Color(0xFF1A1A24),
                         onSelected: (v) {
                           if (v == 'import') _importAndPlay();
+                          if (v == 'compact') {
+                            setState(() => _isMinimized = !_isMinimized);
+                          }
                         },
-                        itemBuilder: (_) => const [
+                        itemBuilder: (_) => [
+                          PopupMenuItem(
+                            value: 'compact',
+                            child: Text(
+                              _isMinimized ? 'Afficher en grand' : 'Afficher en compact',
+                            ),
+                          ),
+                          const PopupMenuDivider(),
                           PopupMenuItem(
                             value: 'import',
                             child: Text('Importer de l\'audio'),
@@ -314,8 +382,6 @@ class _PageLecteurState extends State<PageLecteur> {
       ),
     );
   }
-
-  // ── États ────────────────────────────────────────────────────
 
   Widget _buildLoading() {
     return const Center(
@@ -422,8 +488,6 @@ class _PageLecteurState extends State<PageLecteur> {
     );
   }
 
-  // ── Player compact ───────────────────────────────────────────
-
   Widget _buildCompact(Morceau track) {
     return Column(
       key: const ValueKey('compact'),
@@ -481,7 +545,6 @@ class _PageLecteurState extends State<PageLecteur> {
     );
   }
 
-  // ── Player complet ───────────────────────────────────────────
 
   Widget _buildFull(Morceau track) {
     return SingleChildScrollView(
@@ -489,7 +552,6 @@ class _PageLecteurState extends State<PageLecteur> {
       physics: const BouncingScrollPhysics(),
       child: Column(children: [
         const SizedBox(height: 18),
-        // Pochette
         Container(
           width: 300, height: 300,
           decoration: BoxDecoration(
@@ -554,7 +616,6 @@ class _PageLecteurState extends State<PageLecteur> {
         const SizedBox(height: 26),
         _buildSlider(track),
         const SizedBox(height: 16),
-        // Contrôles
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
@@ -571,7 +632,7 @@ class _PageLecteurState extends State<PageLecteur> {
               icon: const Icon(
                 Icons.skip_previous_rounded, size: 36, color: Colors.white,
               ),
-              onPressed: _serviceAudio.precedent,
+              onPressed: _goToPrevious,
             ),
             Container(
               width: 76, height: 76,
@@ -606,7 +667,7 @@ class _PageLecteurState extends State<PageLecteur> {
               icon: const Icon(
                 Icons.skip_next_rounded, size: 36, color: Colors.white,
               ),
-              onPressed: _serviceAudio.suivant,
+              onPressed: _goToNext,
             ),
             IconButton(
               icon: Icon(
@@ -622,7 +683,6 @@ class _PageLecteurState extends State<PageLecteur> {
           ],
         ),
         const SizedBox(height: 20),
-        // File d'attente
         if (_queue.isNotEmpty) ...[
           Align(
             alignment: Alignment.centerLeft,
@@ -685,9 +745,6 @@ class _PageLecteurState extends State<PageLecteur> {
       ]),
     );
   }
-
-  // ── Slider ───────────────────────────────────────────────────
-
   Widget _buildSlider(Morceau track, {bool compact = false}) {
     return StreamBuilder<Duration>(
       stream: _serviceAudio.positionStream,
