@@ -12,8 +12,7 @@ class PageProfil extends StatefulWidget {
 class _PageProfilState extends State<PageProfil> {
   final ServiceAudio _audio = ServiceAudio.instance;
   double _volume      = 1.0;
-  bool   _aleatoire   = false;
-  bool   _repetition  = false;
+  
 
   @override
   void initState() {
@@ -24,20 +23,7 @@ class _PageProfilState extends State<PageProfil> {
     setState(() => _volume = v);
     await _audio.setVolume(v);
   }
-  Future<void> _onAleatoireChange(bool v) async {
-    setState(() => _aleatoire = v);
-    await _audio.setShuffle(v);
-  }
-
-  Future<void> _onRepetitionChange(bool v) async {
-    setState(() => _repetition = v);
-    await _audio.setLoopMode(v ? LoopMode.one : LoopMode.off);
-  }
-
-  Future<void> _onDeconnexion() async {
-    await _audio.stop();
-    if (mounted) Navigator.pop(context);
-  }
+  
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -109,15 +95,6 @@ class _PageProfilState extends State<PageProfil> {
                   "John Doe",
                   style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  "Membre Premium",
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: const Color(0xFF00E5FF).withOpacity(0.8),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
                 const SizedBox(height: 12),
                 StreamBuilder<PlayerState>(
                   stream: _audio.playerStateStream,
@@ -144,32 +121,8 @@ class _PageProfilState extends State<PageProfil> {
                       _buildSectionTitre("Audio"),
                       _buildVolume(),
 
-                      _buildToggleItem(
-                        Icons.shuffle,
-                        "Lecture aléatoire",
-                        _aleatoire,
-                        _onAleatoireChange,
-                      ),
-
-                      _buildToggleItem(
-                        Icons.repeat_one,
-                        "Répéter le morceau",
-                        _repetition,
-                        _onRepetitionChange,
-                      ),
-
                       _buildSectionTitre("Application"),
-                      _buildSettingItem(Icons.notifications_none, "Notifications"),
-                      _buildSettingItem(Icons.history,            "Historique d'écoute"),
-                      _buildSettingItem(Icons.help_outline,       "Aide & Support"),
-
                       const SizedBox(height: 24),
-                      _buildSettingItem(
-                        Icons.logout,
-                        "Déconnexion",
-                        isDestructive: true,
-                        onTap: _onDeconnexion,
-                      ),
                       const SizedBox(height: 24),
                     ],
                   ),
