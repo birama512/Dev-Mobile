@@ -256,9 +256,9 @@ class _PageFavorisState extends State<PageFavoris> {
                                   child: CarteMorceau(
                                     titre:   morceau.titre,
                                     artiste: morceau.artiste,
-                                    onTap: () {
+                                    onTap: () async {
                                       _jouerMorceau(morceau, index);
-                                      Navigator.push(
+                                      final cheminSupprime = await Navigator.push<String?>(
                                         context,
                                         PageLecteur.route(
                                           morceau:      morceau,
@@ -266,6 +266,12 @@ class _PageFavorisState extends State<PageFavoris> {
                                           initialIndex: index,
                                         ),
                                       );
+                                      if (!mounted) return;
+                                      if (cheminSupprime != null) {
+                                        setState(() {
+                                          _favoris.removeWhere((m) => m.chemin == cheminSupprime);
+                                        });
+                                      }
                                     },
                                   ),
                                 );

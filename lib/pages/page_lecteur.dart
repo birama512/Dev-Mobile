@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/morceau.dart';
+import '../services/database_service.dart';
 import '../services/service_audio.dart';
 import '../services/service_fichier.dart';
 
@@ -23,13 +24,13 @@ class PageLecteur extends StatefulWidget {
     this.reprendreLectureEnCours = false,
   });
 
-  static Route<void> route({
+  static Route<String?> route({
     required Morceau morceau,
     List<Morceau> playlist = const [],
     int initialIndex = 0,
     bool reprendreLectureEnCours = false,
   }) {
-    return PageRouteBuilder<void>(
+    return PageRouteBuilder<String?>(
       pageBuilder: (_, animation, unused) => PageLecteur(
         morceau:      morceau,
         playlist:     playlist,
@@ -56,8 +57,8 @@ class PageLecteur extends StatefulWidget {
 class _PageLecteurState extends State<PageLecteur> {
   final ServiceAudio    _serviceAudio    = ServiceAudio.instance;
   final ServiceFichiers _serviceFichiers = ServiceFichiers();
+  final DatabaseService _db              = DatabaseService.instance;
 
-  bool          _isMinimized    = false;
   bool          _isPreparing    = true;
   bool          _hasAudio       = false;
   String?       _erreur;
@@ -224,6 +225,41 @@ class _PageLecteurState extends State<PageLecteur> {
     await _serviceAudio.setLoopMode(next);
   }
 
+  Future<void> _supprimerAudio(Morceau track) async {
+    final confirmer = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E2C),
+        title: const Text(
+          'Supprimer cet audio ?',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: const Text(
+          'Ce morceau sera retiré de la bibliothèque et des favoris.',
+          style: TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmer != true) return;
+
+    await _serviceAudio.stop();
+    await _db.supprimerMorceau(track.chemin);
+
+    if (!mounted) return;
+    Navigator.pop(context, track.chemin);
+  }
+
   Future<void> _seekToIndex(int index) async {
     if (index < 0 || index >= _queue.length) return;
     await _serviceAudio.player.seek(Duration.zero, index: index);
@@ -340,15 +376,16 @@ class _PageLecteurState extends State<PageLecteur> {
                         color: const Color(0xFF1A1A24),
                         onSelected: (v) {
                           if (v == 'import') _importAndPlay();
-                          if (v == 'compact') {
-                            setState(() => _isMinimized = !_isMinimized);
+                          if (v == 'delete') {
+                            unawaited(_supprimerAudio(currentTrack));
                           }
                         },
                         itemBuilder: (_) => [
                           PopupMenuItem(
-                            value: 'compact',
+                            value: 'delete',
                             child: Text(
-                              _isMinimized ? 'Afficher en grand' : 'Afficher en compact',
+                              'Supprimer cet audio',
+                              style: TextStyle(color: Colors.redAccent),
                             ),
                           ),
                           const PopupMenuDivider(),
@@ -369,9 +406,7 @@ class _PageLecteurState extends State<PageLecteur> {
                               ? _buildErreur()
                               : !_hasAudio
                                   ? _buildEmptyState()
-                                  : _isMinimized
-                                      ? _buildCompact(currentTrack)
-                                      : _buildFull(currentTrack),
+                                  : _buildFull(currentTrack),
                     ),
                   ),
                 ],
@@ -544,7 +579,6 @@ class _PageLecteurState extends State<PageLecteur> {
       ],
     );
   }
-
 
   Widget _buildFull(Morceau track) {
     return SingleChildScrollView(

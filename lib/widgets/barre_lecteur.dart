@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
 import '../models/morceau.dart';
+import '../services/database_service.dart';
 import '../pages/page_lecteur.dart';
 
-class BarreLecteur extends StatelessWidget {
+class BarreLecteur extends StatefulWidget {
   final Morceau morceau;
   final List<Morceau> playlist;
   final int initialIndex;
   final bool reprendreLectureEnCours;
   final bool isPlaying;
   final VoidCallback onPlayPause;
+  final Future<void> Function(String cheminSupprime)? onLecteurClosed;
 
   const BarreLecteur({
     super.key,
@@ -18,21 +20,91 @@ class BarreLecteur extends StatelessWidget {
     this.reprendreLectureEnCours = false,
     this.isPlaying = true,
     required this.onPlayPause,
+    this.onLecteurClosed,
   });
+
+  @override
+  State<BarreLecteur> createState() => _BarreLecteurState();
+}
+
+class _BarreLecteurState extends State<BarreLecteur> {
+  final DatabaseService _db = DatabaseService.instance;
+  bool _estFavori = false;
+  bool _chargementFavori = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _chargerEtatFavori();
+  }
+
+  @override
+  void didUpdateWidget(covariant BarreLecteur oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.morceau.chemin != widget.morceau.chemin) {
+      _chargerEtatFavori();
+    }
+  }
+
+  Future<void> _chargerEtatFavori() async {
+    if (widget.morceau.chemin.isEmpty) {
+      if (mounted) {
+        setState(() => _estFavori = false);
+      }
+      return;
+    }
+
+    final estFavori = await _db.estFavori(widget.morceau.chemin);
+    if (!mounted) return;
+    setState(() => _estFavori = estFavori);
+  }
+
+  Future<void> _basculerFavori() async {
+    if (_chargementFavori || widget.morceau.chemin.isEmpty) return;
+
+    setState(() => _chargementFavori = true);
+    final etaitFavori = _estFavori;
+
+    try {
+      if (etaitFavori) {
+        await _db.retirerFavori(widget.morceau.chemin);
+      } else {
+        await _db.ajouterFavori(widget.morceau);
+      }
+
+      if (!mounted) return;
+      setState(() => _estFavori = !etaitFavori);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            etaitFavori ? 'Retiré des favoris.' : 'Ajouté aux favoris.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _chargementFavori = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        final cheminSupprime = await Navigator.push<String?>(
           context,
           PageLecteur.route(
-            morceau: morceau,
-            playlist: playlist.isEmpty ? [morceau] : playlist,
-            initialIndex: initialIndex,
-            reprendreLectureEnCours: reprendreLectureEnCours,
+            morceau: widget.morceau,
+            playlist: widget.playlist.isEmpty ? [widget.morceau] : widget.playlist,
+            initialIndex: widget.initialIndex,
+            reprendreLectureEnCours: widget.reprendreLectureEnCours,
           ),
         );
+        if (cheminSupprime != null && widget.onLecteurClosed != null) {
+          await widget.onLecteurClosed!(cheminSupprime);
+        }
       },
       child: Container(
         height: 70,
@@ -100,8 +172,11 @@ class BarreLecteur extends StatelessWidget {
               ),
             ),
             IconButton(
-              icon: const Icon(Icons.favorite_border, color: Colors.white),
-              onPressed: () {},
+              icon: Icon(
+                _estFavori ? Icons.favorite : Icons.favorite_border,
+                color: _estFavori ? const Color(0xFF6C63FF) : Colors.white,
+              ),
+              onPressed: _chargementFavori ? null : _basculerFavori,
             ),
             Container(
               decoration: BoxDecoration(
@@ -109,8 +184,11 @@ class BarreLecteur extends StatelessWidget {
                 color: Theme.of(context).primaryColor,
               ),
               child: IconButton(
-                icon: Icon(isPlaying ? Icons.pause : Icons.play_arrow, color: Colors.white),
-                onPressed: onPlayPause,
+                icon: Icon(
+                  widget.isPlaying ? Icons.pause : Icons.play_arrow,
+                  color: Colors.white,
+                ),
+                onPressed: widget.onPlayPause,
               ),
             ),
           ],

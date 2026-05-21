@@ -67,7 +67,7 @@ class _PageAccueilState extends State<PageAccueil> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${morceaux.length} fichier(s) audio ajouté(s).')),
     );
-    await Navigator.push(
+    final cheminSupprime = await Navigator.push<String?>(
       context,
       PageLecteur.route(
         morceau:      morceaux.first,
@@ -75,6 +75,10 @@ class _PageAccueilState extends State<PageAccueil> {
         initialIndex: 0,
       ),
     );
+    if (cheminSupprime != null) {
+      _gererSuppressionLocale(cheminSupprime);
+      return;
+    }
     if (mounted) {
       setState(() {
         _playlistActive = morceaux;
@@ -87,7 +91,7 @@ class _PageAccueilState extends State<PageAccueil> {
       _playlistActive = _bibliotheque;
       _lastKnownIndex = index;
     });
-    await Navigator.push(
+    final cheminSupprime = await Navigator.push<String?>(
       context,
       PageLecteur.route(
         morceau:      morceau,
@@ -95,6 +99,19 @@ class _PageAccueilState extends State<PageAccueil> {
         initialIndex: index,
       ),
     );
+    if (cheminSupprime != null) {
+      _gererSuppressionLocale(cheminSupprime);
+    }
+  }
+
+  void _gererSuppressionLocale(String chemin) {
+    if (!mounted) return;
+
+    setState(() {
+      _bibliotheque.removeWhere((m) => m.chemin == chemin);
+      _playlistActive = [];
+      _lastKnownIndex = 0;
+    });
   }
   @override
   Widget build(BuildContext context) {
@@ -122,6 +139,9 @@ class _PageAccueilState extends State<PageAccueil> {
                   reprendreLectureEnCours: true,
                   isPlaying: isPlaying,
                   onPlayPause: _audio.togglePlayPause,
+                  onLecteurClosed: (chemin) async {
+                    _gererSuppressionLocale(chemin);
+                  },
                 ),
               );
             },

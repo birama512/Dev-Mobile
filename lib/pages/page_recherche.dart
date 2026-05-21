@@ -167,9 +167,9 @@ class _PageRechercheState extends State<PageRecherche> {
                                 return CarteMorceau(
                                   titre:   morceau.titre,
                                   artiste: morceau.artiste,
-                                  onTap: () {
+                                  onTap: () async {
                                     _jouerMorceau(morceau, index);
-                                    Navigator.push(
+                                    final cheminSupprime = await Navigator.push<String?>(
                                       context,
                                       PageLecteur.route(
                                         morceau:      morceau,
@@ -177,6 +177,13 @@ class _PageRechercheState extends State<PageRecherche> {
                                         initialIndex: index,
                                       ),
                                     );
+                                    if (!mounted) return;
+                                    if (cheminSupprime != null) {
+                                      setState(() {
+                                        _tousMorceaux.removeWhere((m) => m.chemin == cheminSupprime);
+                                        _resultats.removeWhere((m) => m.chemin == cheminSupprime);
+                                      });
+                                    }
                                   },
                                 );
                               },

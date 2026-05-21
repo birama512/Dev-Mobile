@@ -56,15 +56,23 @@ class _PageDetailsPlaylistState extends State<PageDetailsPlaylist> {
     await _audio.play();
     setState(() => _enChargement = false);
 
-    if (mounted) {
-      Navigator.push(
-        context,
-        PageLecteur.route(
-          morceau:      _playlist.morceaux[index],
-          playlist:     _playlist.morceaux,
-          initialIndex: index,
-        ),
-      );
+    if (!mounted) return;
+
+    final cheminSupprime = await Navigator.push<String?>(
+      context,
+      PageLecteur.route(
+        morceau:      _playlist.morceaux[index],
+        playlist:     _playlist.morceaux,
+        initialIndex: index,
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (cheminSupprime != null) {
+      setState(() {
+        _playlist.morceaux.removeWhere((m) => m.chemin == cheminSupprime);
+      });
     }
   }
   Future<void> _ajouterMorceaux() async {
